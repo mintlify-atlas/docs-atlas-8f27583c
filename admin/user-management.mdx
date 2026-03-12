@@ -1,0 +1,284 @@
+---
+title: 'User Management'
+description: 'Managing user accounts, roles, and permissions in Lynx Note'
+---
+
+## Overview
+
+Administrators have complete control over user accounts, including creating users with specific roles, editing profiles, and managing account lifecycle.
+
+## User Model
+
+Users in Lynx Note have the following key attributes:
+
+```ruby
+field :name, type: String
+field :email, type: String
+field :password, type: String  # BCrypt encrypted
+field :role, type: String      # 'user' or 'admin'
+```
+
+Defined in `app/models/user.rb:9-12`
+
+## Listing Users
+
+Access all users in the system via the admin users index:
+
+```ruby
+GET /admin/users
+```
+
+This displays all registered users with their details:
+
+```ruby
+@users = User.all
+```
+
+From `app/controllers/admin/users_controller.rb:6-8`
+
+## Viewing User Details
+
+View a specific user's complete profile:
+
+```ruby
+GET /admin/users/:id
+```
+
+Displays:
+- User name and email
+- Account role
+- Creation and modification timestamps
+- Associated content (notes, collections)
+- Friendship connections
+
+## Creating Users
+
+### Standard User Creation
+
+Create a new user account:
+
+```ruby
+POST /admin/users
+```
+
+**Required Parameters:**
+- `name` - User's display name
+- `email` - Valid email address (must be unique)
+- `password` - Will be encrypted with BCrypt
+
+### Role Assignment
+
+Admins can assign roles during user creation:
+
+**Default Role** - If no role is specified, defaults to `'user'`:
+
+```ruby
+if params[:user][:role].blank?
+  @user = User.new(user_params.merge(role: 'user'))
+else
+  @user = User.new(user_params)
+end
+```
+
+From `app/controllers/admin/users_controller.rb:15-19`
+
+**Admin Role** - Include `role: 'admin'` in parameters to create admin users
+
+### Email Uniqueness Validation
+
+The system prevents duplicate email addresses:
+
+```ruby
+if User.where(email: user_params[:email]).exists?
+  @user.errors.add(:email, "The email already exists")
+  render :new, status: :unprocessable_entity and return
+end
+```
+
+From `app/controllers/admin/users_controller.rb:21-23`
+
+### Password Encryption
+
+Passwords are automatically encrypted using BCrypt:
+
+```ruby
+def password=(unencrypted_password)
+  if unencrypted_password.present? && !bcrypt_password_format?(unencrypted_password)
+    super(BCrypt::Password.create(unencrypted_password))
+  else
+    super(unencrypted_password)
+  end
+end
+```
+
+From `app/models/user.rb:41-47`
+
+## Updating Users
+
+Edit any user's account information:
+
+```ruby
+PUT/PATCH /admin/users/:id
+```
+
+**Editable Fields:**
+- Name
+- Email (must remain unique)
+- Password (optional - leave blank to keep current)
+- Role (`'user'` or `'admin'`)
+
+### Password Update Behavior
+
+If the password field is left blank during update, the existing password is preserved:
+
+```ruby
+if user_params[:password].blank?
+  @user.password_update = @user.password
+end
+```
+
+From `app/controllers/users_controller.rb:40-42`
+
+## Deleting Users
+
+<Warning>
+  User deletion is permanent and cascades to all associated content. This action cannot be undone.
+</Warning>
+
+Delete a user account:
+
+```ruby
+DELETE /admin/users/:id
+```
+
+### Cascade Deletion
+
+When a user is deleted, the following are automatically removed:
+
+- All notes (`dependent: :destroy`)
+- All collections (`dependent: :destroy`)
+- All notifications (`dependent: :destroy`)
+- All initiated friendships (`dependent: :destroy`)
+- All received friendships (via `before_destroy` callback)
+- All sharings (`dependent: :destroy`)
+
+Defined in `app/models/user.rb:14-24`
+
+### Friendship Cleanup
+
+The `remove_friendships` callback ensures complete cleanup:
+
+```ruby
+def remove_friendships
+  self.initiated_friendships.destroy_all
+  Friendship.where(friend_id: self.id).destroy_all
+end
+```
+
+From `app/models/user.rb:78-81`
+
+## User Roles
+
+### User Role
+
+Standard users with access to:
+- Their own notes and collections
+- Notes and collections shared with them
+- Friendship management
+- Profile settings
+
+### Admin Role
+
+Administrators have elevated privileges:
+- Access to all system resources
+- User account management
+- Content moderation capabilities
+- Bypass ownership and sharing restrictions
+
+Role check implemented in `app/controllers/application_controller.rb:17-19`:
+
+```ruby
+def user_admin?
+  current_user.role == 'admin'
+end
+```
+
+## User Validation
+
+### Required Fields
+
+All users must have:
+- Name (cannot be blank)
+- Email (cannot be blank, must be valid format)
+- Password (cannot be blank on creation)
+
+### Email Format Validation
+
+```ruby
+if email.present? && !email.match?(URI::MailTo::EMAIL_REGEXP)
+  errors.add(:email, "It is invalid, does not have the format")
+end
+```
+
+From `app/models/user.rb:97-99`
+
+## Common Admin Tasks
+
+### Promote User to Admin
+
+1. Navigate to `/admin/users/:id/edit`
+2. Set role field to `'admin'`
+3. Save changes
+
+### Reset User Password
+
+1. Navigate to `/admin/users/:id/edit`
+2. Enter new password
+3. Save changes (password is automatically encrypted)
+
+### Audit User Content
+
+1. Navigate to `/admin/users/:id`
+2. View associated notes and collections
+3. Check friendship connections
+4. Review sharing activity
+
+## Success Messages
+
+All admin user operations return success notices:
+
+```ruby
+# After creation
+redirect_to admin_users_path, notice: "User was successfully created."
+
+# After update
+redirect_to admin_users_path, notice: "User was successfully updated."
+
+# After deletion
+redirect_to admin_users_path, notice: "User was successfully destroyed."
+```
+
+From `app/controllers/admin/users_controller.rb:32-42`
+
+## Security Best Practices
+
+<Warning>
+  Exercise caution when assigning admin roles. Admin users have unrestricted access to all system resources.
+</Warning>
+
+- Limit the number of admin accounts
+- Regularly audit admin user list
+- Use strong passwords for admin accounts
+- Monitor admin activity logs
+- Verify user identity before role changes
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Admin Overview" icon="gauge" href="/admin/overview">
+    Learn about admin capabilities and dashboard access
+  </Card>
+  <Card title="Content Moderation" icon="shield" href="/admin/content-moderation">
+    Manage notes, collections, and relationships
+  </Card>
+</CardGroup>

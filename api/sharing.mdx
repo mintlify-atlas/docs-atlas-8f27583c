@@ -1,0 +1,352 @@
+---
+title: 'Sharing API'
+description: 'Share notes and collections with friends and manage permissions'
+---
+
+## Authentication
+
+All sharing endpoints require session authentication. Users can only share items they own and must be friends with the recipients.
+
+## Overview
+
+The Sharing API allows users to share notes and collections with their friends. Sharing is polymorphic, supporting both Note and Collection resources through a unified interface.
+
+### Shareable Resources
+
+- **Notes**: Individual notes can be shared with one or more friends
+- **Collections**: Entire collections (including all contained notes) can be shared
+
+---
+
+## Get Sharing Form
+
+Retrieve the form to share a note or collection.
+
+```http
+GET /sharing/:object
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="object" type="string" required>
+  Query string containing the shareable object ID (e.g., "object=123")
+</ParamField>
+
+### Response
+
+Returns HTML form (without layout) containing:
+
+<ResponseField name="sharing" type="object">
+  New sharing object
+</ResponseField>
+
+<ResponseField name="friendships" type="array">
+  Array of accepted friendships with friend objects
+</ResponseField>
+
+<ResponseField name="object" type="string">
+  The shareable object ID
+</ResponseField>
+
+---
+
+## Create Sharing
+
+Share a note or collection with friends.
+
+```http
+POST /sharing_create
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField body="shareable_id" type="string" required>
+  ID of the note or collection to share
+</ParamField>
+
+<ParamField body="sharing[shared_with]" type="array" required>
+  Array of user IDs to share with (must be friends)
+</ParamField>
+
+### Response
+
+On success, creates a sharing record and sends notifications.
+
+<ResponseField name="message" type="string">
+  - For notes: "The note has been shared."
+  - For collections: "The collection has been shared."
+</ResponseField>
+
+### Side Effects
+
+- Creates a sharing record linking the owner, shareable resource, and recipients
+- Sends notifications to all recipients:
+  - Notes: "The user [Name] has shared a note with you" (type: `note_request`)
+  - Collections: "The user [Name] has shared a collection with you" (type: `collection_request`)
+
+### Validation
+
+- At least one friend must be selected
+- Shareable resource must exist and belong to the current user
+
+### Example Request
+
+```bash
+curl -X POST https://lynxnote.com/sharing_create \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "shareable_id": "note_123",
+    "sharing": {
+      "shared_with": ["user_456", "user_789"]
+    }
+  }'
+```
+
+---
+
+## Get Edit Sharing Form
+
+Retrieve the form to edit sharing permissions.
+
+```http
+GET /sharing_edit/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Sharing record ID
+</ParamField>
+
+### Response
+
+Returns HTML form (without layout) containing:
+
+<ResponseField name="sharing" type="object">
+  Existing sharing object
+</ResponseField>
+
+<ResponseField name="friendships" type="array">
+  Array of accepted friendships
+</ResponseField>
+
+<ResponseField name="friendship_shared" type="array">
+  Array of user IDs currently sharing the resource
+</ResponseField>
+
+---
+
+## Update Sharing
+
+Modify the list of friends who can access a shared resource.
+
+```http
+POST /sharing_update/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Sharing record ID
+</ParamField>
+
+<ParamField body="sharing[shared_with]" type="array" required>
+  Updated array of user IDs to share with
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  - For notes: "The note has been shared."
+  - For collections: "The collection has been shared."
+</ResponseField>
+
+### Side Effects
+
+**For Removed Users:**
+- Removes user ID from the `shared_with` array
+- Sends notification:
+  - Notes: "The user [Name] has deleted a note with you"
+  - Collections: "The user [Name] has deleted a collection with you"
+
+**For Added Users:**
+- Adds user ID to the `shared_with` array
+- Sends notification:
+  - Notes: "The user [Name] has shared a note with you"
+  - Collections: "The user [Name] has shared a collection with you"
+
+### Validation
+
+- Cannot remove all friends (at least one must remain)
+
+### Example Request
+
+```bash
+curl -X POST https://lynxnote.com/sharing_update/123 \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sharing": {
+      "shared_with": ["user_456"]
+    }
+  }'
+```
+
+---
+
+## Delete Sharing
+
+Completely remove sharing, making the resource private again.
+
+```http
+DELETE /sharing_delete/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Sharing record ID
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  - For notes: "The note has been unshared"
+  - For collections: "The collection has been unshared"
+</ResponseField>
+
+### Side Effects
+
+- Deletes the sharing record completely
+- Sends notifications to all previously shared users:
+  - Notes: "The user [Name] has deleted a note with you"
+  - Collections: "The user [Name] has deleted a collection with you"
+
+### Example Request
+
+```bash
+curl -X DELETE https://lynxnote.com/sharing_delete/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Unshare (Remove Self)
+
+Remove yourself from a shared resource (for recipients).
+
+```http
+DELETE /unsharing/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Sharing record ID
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  - For notes: "The note has been unshared"
+  - For collections: "The collection has been unshared"
+</ResponseField>
+
+### Side Effects
+
+- Removes the current user's ID from the `shared_with` array
+- Does not send notifications
+- If this was the last user, the sharing record remains but with an empty `shared_with` array
+
+### Example Request
+
+```bash
+curl -X DELETE https://lynxnote.com/unsharing/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Sharing Data Model
+
+### Sharing Object
+
+<ResponseField name="id" type="string">
+  Unique sharing identifier
+</ResponseField>
+
+<ResponseField name="owner" type="string">
+  User ID of the resource owner
+</ResponseField>
+
+<ResponseField name="shareable_type" type="string">
+  Type of shared resource: "Note" or "Collection"
+</ResponseField>
+
+<ResponseField name="shareable_id" type="string">
+  ID of the shared note or collection
+</ResponseField>
+
+<ResponseField name="shared_with" type="array">
+  Array of user IDs who have access to the shared resource
+</ResponseField>
+
+<ResponseField name="created_at" type="timestamp">
+  When the sharing was created
+</ResponseField>
+
+<ResponseField name="updated_at" type="timestamp">
+  When the sharing was last modified
+</ResponseField>
+
+### Access Control
+
+- **Owners** can share, update sharing, and delete sharing
+- **Recipients** (users in `shared_with`) can view the resource and unshare themselves
+- Only accepted friends can be added to `shared_with`
+- When a friendship is deleted, all sharing between those users is automatically removed
+
+### Polymorphic Behavior
+
+The sharing system uses Rails polymorphic associations:
+
+- `shareable_type` and `shareable_id` form a polymorphic reference
+- The same sharing logic applies to both Notes and Collections
+- Notifications and redirects adjust based on the `shareable_type`

@@ -1,0 +1,245 @@
+---
+title: 'Friendships API'
+description: 'Manage friend connections, requests, and relationships'
+---
+
+## Authentication
+
+All friendship endpoints require session authentication.
+
+## List Friendships
+
+Retrieve all friendship information including requests, pending friendships, and accepted friendships.
+
+```http
+GET /friendships
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Response
+
+<ResponseField name="friendship_requests" type="array">
+  Pending friend requests received by the current user
+  <ResponseField name="id" type="string">
+    Friendship ID
+  </ResponseField>
+  <ResponseField name="friend" type="object">
+    User object of the person who sent the request
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="pending_friendships" type="array">
+  Pending friend requests sent by the current user
+  <ResponseField name="id" type="string">
+    Friendship ID
+  </ResponseField>
+  <ResponseField name="friend" type="object">
+    User object of the person who received the request
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="friendships" type="array">
+  Accepted friendships (both initiated and received)
+  <ResponseField name="id" type="string">
+    Friendship ID
+  </ResponseField>
+  <ResponseField name="friend" type="object">
+    Friend's user object
+  </ResponseField>
+  <ResponseField name="notes" type="array">
+    Notes shared by this friend with the current user
+  </ResponseField>
+  <ResponseField name="collections" type="array">
+    Collections shared by this friend with the current user
+  </ResponseField>
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET https://lynxnote.com/friendships \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Create Friendship Request
+
+Send a friend request to another user.
+
+```http
+POST /friendships
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField body="friend" type="string" required>
+  User ID of the person to send a friend request to
+</ParamField>
+
+### Response
+
+On success, creates a friendship with "pending" status and sends a notification.
+
+<ResponseField name="message" type="string">
+  "Friendship request has been sent."
+</ResponseField>
+
+### Side Effects
+
+- Creates a friendship record with status "pending"
+- Sends a notification to the recipient
+- Clears any existing friend request notifications
+
+### Validation
+
+- Friend parameter is required
+- Cannot send request to yourself
+- Cannot send duplicate requests
+
+### Example Request
+
+```bash
+curl -X POST https://lynxnote.com/friendships \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "friend": "user_456"
+  }'
+```
+
+---
+
+## Accept Friendship Request
+
+Accept a pending friend request.
+
+```http
+PATCH /friendships/:id
+PUT /friendships/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Friendship ID
+</ParamField>
+
+### Response
+
+Updates the friendship status from "pending" to "accepted".
+
+<ResponseField name="message" type="string">
+  "Friendship has been accepted."
+</ResponseField>
+
+### Side Effects
+
+- Updates friendship status to "accepted"
+- Sends an acceptance notification to the requester
+- Clears friend request notifications
+
+### Example Request
+
+```bash
+curl -X PATCH https://lynxnote.com/friendships/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Delete Friendship
+
+Delete a friendship or decline a friend request.
+
+```http
+DELETE /friendships/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Friendship ID
+</ParamField>
+
+### Response
+
+Permanently removes the friendship.
+
+<ResponseField name="message" type="string">
+  "Friendship was successfully destroy."
+</ResponseField>
+
+### Side Effects
+
+- Deletes the friendship record
+- Removes all sharing associations between the two users
+- Sends a notification to the other user:
+  - If declining a pending request: "[User] has declined your request."
+  - If deleting an accepted friendship: "[User] has deleted your friendship."
+
+### Example Request
+
+```bash
+curl -X DELETE https://lynxnote.com/friendships/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Friendship Lifecycle
+
+### Status Values
+
+<ParamField name="status" type="string">
+  - **pending**: Friend request has been sent but not yet accepted
+  - **accepted**: Friend request has been accepted, users are now friends
+</ParamField>
+
+### Friendship Structure
+
+Each friendship has two sides:
+
+- **user**: The person who initiated the friendship request
+- **friend**: The person who received the friendship request
+
+### Finding Available Users
+
+When creating a new friendship, the system excludes:
+- The current user
+- Users with pending friendship requests (sent or received)
+- Users who are already friends (accepted friendships)
+
+### Notifications
+
+Friendship actions trigger automatic notifications:
+
+1. **Request Sent**: Recipient receives "[User] sent you a friend request."
+2. **Request Accepted**: Requester receives "[User] has accepted your friendship request."
+3. **Request Declined**: Requester receives "[User] has declined your request."
+4. **Friendship Deleted**: Other user receives "[User] has deleted your friendship."
+
+All notifications have type `friend_request`.

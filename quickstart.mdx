@@ -1,80 +1,561 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get started with Lynx Note in minutes - create your account, first note, and start sharing
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through the essential features of Lynx Note:
 
-### Step 1: Set up your local environment
+1. Creating your account
+2. Creating your first note
+3. Organizing notes in a collection
+4. Adding friends
+5. Sharing content with friends
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+By the end, you'll be ready to use Lynx Note for your collaborative note-taking needs.
+
+## Step 1: Create Your Account
+
+<Steps>
+  <Step title="Navigate to Sign Up">
+    Open your browser and go to:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```
+    http://localhost:3000/signup
+    ```
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    Or click the "Sign Up" link from the home page.
+  </Step>
+  
+  <Step title="Fill in Your Details">
+    The registration form requires three fields:
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    - **Name**: Your display name (required)
+    - **Email**: A valid email address (required, validated)
+    - **Password**: Your secure password (required, will be encrypted)
+    
+    <CodeGroup>
+    ```ruby User Model Validation
+    # From app/models/user.rb
+    field :name, type: String
+    field :email, type: String
+    field :password, type: String
+    field :role, type: String  # Automatically set to 'user'
+    
+    # Email must match valid format
+    if email.present? && !email.match?(URI::MailTo::EMAIL_REGEXP)
+      errors.add(:email, "It is invalid, does not have the format")
+    end
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Submit Registration">
+    Click the registration button. If successful, you'll see:
+    
+    ```
+    "Registered, you can now log in"
+    ```
+    
+    <Note>
+    Your password is automatically encrypted using BCrypt before being stored in the database. The system uses BCrypt's secure hashing with salt.
+    </Note>
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+### Login to Your Account
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+After registration, log in at `http://localhost:3000/login`:
 
-### Step 3: Go live
+```ruby Session Authentication
+# From app/controllers/session_controller.rb
+# The system authenticates your email and password
+user = User.find_by(email: params[:email])
+if user && user.authenticate(params[:password])
+  session[:user_id] = user.id
+  # Redirect to notes dashboard
+end
+```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+## Step 2: Create Your First Note
 
-## Next steps
+<Steps>
+  <Step title="Access the Notes Section">
+    After logging in, navigate to:
+    
+    ```
+    http://localhost:3000/notes
+    ```
+    
+    Click the "New Note" button.
+  </Step>
+  
+  <Step title="Add a Title">
+    Enter a descriptive title for your note:
+    
+    ```
+    My First Note
+    ```
+    
+    <Note>
+    You must provide either a title or content. A completely empty note cannot be saved.
+    </Note>
+  </Step>
+  
+  <Step title="Add Content">
+    Lynx Note supports three types of content blocks:
+    
+    <Tabs>
+      <Tab title="Text">
+        Add text paragraphs to your note:
+        
+        ```json Content Format
+        {
+          "type": "text",
+          "value": "This is my first note in Lynx Note!"
+        }
+        ```
+      </Tab>
+      
+      <Tab title="List">
+        Create lists (items are semicolon-separated):
+        
+        ```json Content Format
+        {
+          "type": "list",
+          "value": "Task 1;Task 2;Task 3"
+        }
+        ```
+        
+        The UI will display these as separate list items.
+      </Tab>
+      
+      <Tab title="Image">
+        Upload images to your note:
+        
+        ```json Content Format
+        {
+          "type": "file",
+          "value": "/uploads/abc123-def456.jpg"
+        }
+        ```
+        
+        Images are stored with unique UUIDs in `public/uploads/`.
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step title="Save Your Note">
+    Click "Create Note" to save. The note is stored in MongoDB:
+    
+    ```ruby Note Creation
+    # From app/controllers/notes_controller.rb
+    @note = Note.new(title: note_params[:title])
+    @note.user = current_user
+    
+    # Process content blocks
+    processed_content = params[:note][:content].map do |content_item|
+      case content_item[:type]
+      when 'text'
+        content_item if !content_item[:value].blank?
+      when 'list'
+        { type: 'list', value: content_item[:value].reject(&:blank?).join(';') }
+      when 'file'
+        { type: 'file', value: handle_uploaded_file(content_item[:value]) }
+      end
+    end.compact
+    
+    @note.content = processed_content.map { |item| item.to_json }
+    @note.save
+    ```
+  </Step>
+</Steps>
 
-Now that you have your docs running, explore these key features:
+### Edit Your Note
+
+To edit an existing note:
+
+1. Click on the note from your notes list
+2. Click the "Edit" button
+3. Modify the title or content
+4. Update or delete existing images
+5. Click "Update Note"
+
+<Warning>
+When you delete an image from a note, the file is permanently removed from the server. This action cannot be undone.
+</Warning>
+
+## Step 3: Organize Notes in Collections
+
+Collections help you organize related notes together.
+
+<Steps>
+  <Step title="Create a Collection">
+    Navigate to:
+    
+    ```
+    http://localhost:3000/collections
+    ```
+    
+    Click "New Collection" and enter a name:
+    
+    ```
+    Work Projects
+    ```
+    
+    ```ruby Collection Model
+    # From app/models/collection.rb
+    class Collection
+      field :name, type: String
+      field :notes, type: Array, default: []
+      
+      belongs_to :user
+      has_many :sharings, as: :shareable
+    end
+    ```
+  </Step>
+  
+  <Step title="Add Notes to Collection">
+    When creating or editing a note, you can select which collections it belongs to:
+    
+    1. Create or edit a note
+    2. Check the boxes for the collections you want
+    3. Save the note
+    
+    ```ruby Adding to Collections
+    # From app/services/collections_notes_service.rb
+    # The service handles adding notes to multiple collections
+    service = CollectionsNotesService.new(@note)
+    service.add_collections(note_params[:collection_ids])
+    ```
+  </Step>
+  
+  <Step title="View Collection Contents">
+    Click on a collection to see all notes within it. Collections automatically update when you:
+    
+    - Add new notes
+    - Remove notes
+    - Delete notes entirely
+  </Step>
+</Steps>
+
+## Step 4: Add Friends
+
+Before you can share notes, you need to establish friendships.
+
+<Steps>
+  <Step title="Send a Friend Request">
+    Navigate to:
+    
+    ```
+    http://localhost:3000/friendships
+    ```
+    
+    Click "New Friendship" and select a user from the list.
+    
+    ```ruby Friendship Creation
+    # From app/controllers/friendships_controller.rb
+    @friend = User.find(params[:friend])
+    @friendship = current_user.initiated_friendships.build(friend: @friend)
+    
+    if @friendship.save
+      # Create notification for recipient
+      Notification.create(
+        user: @friend,
+        message: "#{current_user.name.capitalize} sent you a friend request.",
+        notification_type: 'friend_request'
+      )
+    end
+    ```
+    
+    The request starts with `status: "pending"`.
+  </Step>
+  
+  <Step title="Accept or Decline Requests">
+    If someone sends you a friend request, you'll see it in your friendships page:
+    
+    - **Accept**: Changes status to "accepted" and allows sharing
+    - **Decline**: Deletes the friendship request
+    
+    ```ruby Accept Request
+    # From app/controllers/friendships_controller.rb
+    @friendship = Friendship.find(params[:id])
+    if @friendship.status == 'pending'
+      @friendship.update(status: 'accepted')
+      
+      # Notify the requester
+      Notification.create(
+        user: @friendship.user,
+        message: "#{current_user.name.capitalize} has accepted your friendship request.",
+        notification_type: 'friend_request'
+      )
+    end
+    ```
+  </Step>
+  
+  <Step title="View Your Friends">
+    Once accepted, friends appear in your friendships list. You can see:
+    
+    - Friend's name
+    - Notes they've shared with you
+    - Collections they've shared with you
+  </Step>
+</Steps>
+
+### Friendship Relationships
+
+Lynx Note tracks friendships bidirectionally:
+
+```ruby Friendship Model
+# From app/models/user.rb
+has_many :initiated_friendships, 
+  class_name: 'Friendship', 
+  inverse_of: :user
+  
+has_many :received_friendships, 
+  class_name: 'Friendship', 
+  inverse_of: :friend
+```
+
+## Step 5: Share Notes and Collections
+
+Now that you have friends, you can share content with them.
+
+<Steps>
+  <Step title="Share a Note">
+    From the note view, click the "Share" button:
+    
+    1. Select one or more friends to share with
+    2. Click "Share Note"
+    3. Your friends receive a notification
+    
+    ```ruby Sharing Creation
+    # From app/controllers/sharing_controller.rb
+    @sharing = Sharing.new
+    @sharing.owner = current_user
+    @sharing.shareable = @note  # Polymorphic association
+    @sharing.shared_with = [friend1_id, friend2_id]
+    
+    if @sharing.save
+      # Notify each friend
+      @sharing.shared_with.each do |friend_id|
+        user = User.find(friend_id)
+        Notification.create(
+          user: user.id,
+          message: "#{current_user.name.capitalize} has shared a note with you",
+          notification_type: 'note_request'
+        )
+      end
+    end
+    ```
+  </Step>
+  
+  <Step title="Share a Collection">
+    Sharing collections works the same way:
+    
+    1. View a collection
+    2. Click "Share Collection"
+    3. Select friends
+    4. Click "Share"
+    
+    When you share a collection, friends can see all notes within it.
+  </Step>
+  
+  <Step title="Edit Sharing Permissions">
+    You can modify who has access at any time:
+    
+    1. Click "Edit Sharing" on a shared item
+    2. Add or remove friends from the list
+    3. Save changes
+    
+    <Note>
+    When you remove someone from sharing, they receive a notification and immediately lose access to the content.
+    </Note>
+  </Step>
+  
+  <Step title="Unshare Completely">
+    To stop sharing with everyone:
+    
+    1. Click "Delete Sharing"
+    2. All friends lose access
+    3. Notifications are sent to inform them
+    
+    ```ruby Unsharing
+    # From app/controllers/sharing_controller.rb
+    @sharing = Sharing.find(params[:id])
+    @sharing.destroy
+    
+    # Notify all friends who had access
+    @sharing.shared_with.each do |friend_id|
+      user = User.find(friend_id)
+      Notification.create(
+        user: user.id,
+        message: "#{current_user.name.capitalize} has deleted a note with you",
+        notification_type: 'note_request'
+      )
+    end
+    ```
+  </Step>
+</Steps>
+
+### Understanding the Sharing Model
+
+Sharing is implemented using polymorphic associations:
+
+```ruby Sharing Model
+# From app/models/sharing.rb
+class Sharing
+  belongs_to :owner, class_name: 'User'
+  belongs_to :shareable, polymorphic: true  # Can be Note or Collection
+  
+  field :shared_with, type: Array, default: []
+end
+```
+
+This allows the same sharing mechanism to work for both notes and collections.
+
+## View Shared Content
+
+To see what others have shared with you:
+
+<Steps>
+  <Step title="Check Your Friendships Page">
+    Navigate to:
+    
+    ```
+    http://localhost:3000/friendships
+    ```
+    
+    Each friend shows:
+    - Notes they've shared with you
+    - Collections they've shared with you
+  </Step>
+  
+  <Step title="Access Shared Notes">
+    Click on any shared note to view and edit it:
+    
+    ```ruby Shared Access Check
+    # From app/controllers/notes_controller.rb
+    def is_shared
+      @note = Note.find(params[:id])
+      sharing = Sharing.where(shareable_id: @note.id).first
+      
+      # Check if current user has access
+      unless @note.user_id == current_user.id || 
+             sharing&.shared_with&.include?(current_user.id.to_s)
+        redirect_to root_url
+      end
+    end
+    ```
+  </Step>
+  
+  <Step title="View Shared Collections">
+    Shared collections appear in your collections list:
+    
+    ```ruby Shared Collections
+    # From app/models/user.rb
+    def shared_collections
+      collection_ids = Sharing.where(
+        :shared_with.in => [self.id.to_s],
+        shareable_type: 'Collection'
+      ).pluck(:shareable_id)
+      
+      Collection.find(collection_ids)
+    end
+    ```
+  </Step>
+</Steps>
+
+## Mobile Access
+
+Lynx Note is fully responsive and works on mobile devices:
+
+```ruby Browser Detection
+# From app/controllers/notes_controller.rb
+@browser = Browser.new(request.user_agent)
+
+if browser.device.mobile?
+  # Mobile-optimized redirects and views
+  redirect_to @note, notice: 'Note was successfully created.'
+else
+  # Desktop view with sidebar
+  redirect_to notes_path(number: @note.id)
+end
+```
+
+## Best Practices
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Organize with Collections" icon="folder-tree">
+    Group related notes together in collections for easier navigation and sharing.
+  </Card>
+  
+  <Card title="Use Descriptive Titles" icon="heading">
+    Give your notes clear titles so you and your friends can find them easily.
+  </Card>
+  
+  <Card title="Share Selectively" icon="shield-check">
+    Only share with friends you trust, as they can edit your content.
+  </Card>
+  
+  <Card title="Check Notifications" icon="bell">
+    Stay updated on friend requests and sharing activities through the notifications system.
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Common Workflows
+
+<AccordionGroup>
+  <Accordion title="Collaborative Project">
+    1. Create a collection for the project
+    2. Add all project-related notes to the collection
+    3. Add team members as friends
+    4. Share the entire collection with the team
+    5. Everyone can view and edit all notes in the collection
+  </Accordion>
+  
+  <Accordion title="Sharing a Single Note">
+    1. Create a note with the information you want to share
+    2. Click "Share" on the note
+    3. Select specific friends
+    4. They can now view and edit that note
+  </Accordion>
+  
+  <Accordion title="Managing Shared Access">
+    1. View a shared note or collection
+    2. Click "Edit Sharing"
+    3. Add new friends or remove existing ones
+    4. Save changes to update permissions
+  </Accordion>
+  
+  <Accordion title="Removing Friend Access">
+    If you want to stop someone from accessing your content:
+    1. Delete the friendship from your friendships page
+    2. This automatically removes them from all sharing
+    3. They receive a notification about the change
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api/users">
+    Learn about the API endpoints in detail
+  </Card>
+  
+  <Card title="Admin Features" icon="shield" href="/admin/overview">
+    Explore admin features and user management
+  </Card>
+</CardGroup>
+
+## Need Help?
+
+If you encounter any issues:
+
+- Check that you're logged in
+- Verify MongoDB is running
+- Ensure friendships are accepted before sharing
+- Review the browser console for any errors
+
+For validation errors, the application provides clear feedback on what needs to be corrected.

@@ -1,0 +1,305 @@
+---
+title: 'Notes API'
+description: 'Create, read, update, and delete notes with rich content support'
+---
+
+## Authentication
+
+All notes endpoints require session authentication. Users can only access notes they own or notes that have been shared with them.
+
+## List Notes
+
+Retrieve all notes belonging to the authenticated user.
+
+```http
+GET /notes
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Response
+
+<ResponseField name="notes" type="array">
+  Array of note objects belonging to the current user
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET https://lynxnote.com/notes \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Get Note
+
+Retrieve a specific note by ID. Access is granted if the user owns the note or if it has been shared with them.
+
+```http
+GET /notes/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Note ID
+</ParamField>
+
+### Response
+
+<ResponseField name="note" type="object">
+  <ResponseField name="id" type="string">
+    Unique note identifier
+  </ResponseField>
+  <ResponseField name="title" type="string">
+    Note title
+  </ResponseField>
+  <ResponseField name="content" type="array">
+    Array of content items (text, list, or file objects)
+  </ResponseField>
+  <ResponseField name="user_id" type="string">
+    ID of the user who created the note
+  </ResponseField>
+  <ResponseField name="created_at" type="timestamp">
+    Note creation timestamp
+  </ResponseField>
+  <ResponseField name="updated_at" type="timestamp">
+    Last update timestamp
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="shared" type="boolean">
+  Whether the note is currently shared
+</ResponseField>
+
+<ResponseField name="shared_id" type="string">
+  ID of the sharing record if the note is shared
+</ResponseField>
+
+### Content Structure
+
+The `content` array contains JSON-serialized objects with the following types:
+
+- **Text**: `{"type": "text", "value": "string"}`
+- **List**: `{"type": "list", "value": "item1;item2;item3"}`
+- **File**: `{"type": "file", "value": "/uploads/filename.ext"}`
+
+### Example Request
+
+```bash
+curl -X GET https://lynxnote.com/notes/123 \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Accept: application/json"
+```
+
+### Example Response
+
+```json
+{
+  "note": {
+    "id": "123",
+    "title": "My Note",
+    "content": [
+      "{\"type\":\"text\",\"value\":\"Hello world\"}",
+      "{\"type\":\"list\",\"value\":\"Item 1;Item 2;Item 3\"}"
+    ],
+    "user_id": "456",
+    "created_at": "2026-03-12T10:00:00Z",
+    "updated_at": "2026-03-12T10:00:00Z"
+  },
+  "shared": true,
+  "shared_id": "789"
+}
+```
+
+---
+
+## Create Note
+
+Create a new note with optional content and collection associations.
+
+```http
+POST /notes
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField body="note[title]" type="string" required>
+  Note title
+</ParamField>
+
+<ParamField body="note[content]" type="array">
+  Array of content objects with `type` and `value` fields
+</ParamField>
+
+<ParamField body="note[collection_ids]" type="array">
+  Array of collection IDs to associate with the note
+</ParamField>
+
+### Content Types
+
+<ParamField body="content[].type" type="string">
+  Content type: "text", "list", or "file"
+</ParamField>
+
+<ParamField body="content[].value" type="string | array">
+  - **text**: String value
+  - **list**: Array of strings (will be joined with semicolons)
+  - **file**: Uploaded file object
+</ParamField>
+
+### Response
+
+On success, redirects to the notes list with the new note ID.
+
+<ResponseField name="message" type="string">
+  "Note was successfully created."
+</ResponseField>
+
+### Validation
+
+- At least one of title or content must be provided
+- **422 Unprocessable Entity**: Missing required fields
+
+### Example Request
+
+```bash
+curl -X POST https://lynxnote.com/notes \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "note": {
+      "title": "My New Note",
+      "content": [
+        {"type": "text", "value": "This is a text block"},
+        {"type": "list", "value": ["Task 1", "Task 2", "Task 3"]}
+      ],
+      "collection_ids": ["col_123", "col_456"]
+    }
+  }'
+```
+
+---
+
+## Update Note
+
+Update an existing note's title, content, or collection associations.
+
+```http
+PATCH /notes/:id
+PUT /notes/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Note ID
+</ParamField>
+
+<ParamField body="note[title]" type="string">
+  Updated note title
+</ParamField>
+
+<ParamField body="note[content]" type="array">
+  Updated content array
+</ParamField>
+
+<ParamField body="note[collection_ids]" type="array">
+  Updated array of collection IDs
+</ParamField>
+
+<ParamField body="note[images_to_delete]" type="array">
+  Array of file paths to delete from the note
+</ParamField>
+
+<ParamField body="note[images_to_update]" type="array">
+  Array of objects with `index` and `value` for updating specific file content
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  "Note was successfully updated."
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X PATCH https://lynxnote.com/notes/123 \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "note": {
+      "title": "Updated Note Title",
+      "content": [
+        {"type": "text", "value": "Updated text content"}
+      ]
+    }
+  }'
+```
+
+---
+
+## Delete Note
+
+Permanently delete a note. Only the note owner can delete notes.
+
+```http
+DELETE /notes/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Note ID
+</ParamField>
+
+### Response
+
+Redirects to notes list with success message.
+
+<ResponseField name="message" type="string">
+  "Note was successfully destroyed."
+</ResponseField>
+
+### Side Effects
+
+- All file uploads associated with the note are deleted from storage
+- All collection associations are removed
+- All sharing records are deleted
+
+### Example Request
+
+```bash
+curl -X DELETE https://lynxnote.com/notes/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```

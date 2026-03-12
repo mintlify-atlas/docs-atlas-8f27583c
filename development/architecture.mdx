@@ -1,0 +1,214 @@
+---
+title: "System Architecture"
+description: "Understanding Lynx Note's architecture, tech stack, and MVC structure"
+---
+
+## Overview
+
+Lynx Note is a Ruby on Rails web application that follows the Model-View-Controller (MVC) architectural pattern. The application provides a note-taking system with user authentication, collections, and social sharing features.
+
+## Technology Stack
+
+### Core Framework
+- **Ruby**: 3.0.2
+- **Rails**: 7.1.3
+- **Database**: MongoDB (via Mongoid 8.1.5 ODM)
+
+### Key Dependencies
+
+```ruby
+# Database and File Management
+gem 'mongoid', '~> 8.1', '>= 8.1.5'              # MongoDB ODM
+gem 'carrierwave', '~> 2.2', '>= 2.2.6'          # File uploads
+gem 'carrierwave-mongoid', '~> 1.4'              # CarrierWave MongoDB integration
+
+# Authentication
+gem 'bcrypt', '~> 3.1.7'                          # Password hashing
+
+# Frontend
+gem 'turbo-rails'                                 # Hotwire Turbo
+gem 'stimulus-rails'                              # Hotwire Stimulus
+gem 'importmap-rails'                             # JavaScript module imports
+
+# Utilities
+gem 'browser'                                     # Browser detection
+gem 'jbuilder'                                    # JSON APIs
+```
+
+Source: `Gemfile`
+
+## MVC Architecture
+
+### Models
+
+Lynx Note uses **Mongoid** as the Object-Document Mapper (ODM) for MongoDB. All models include `Mongoid::Document` and `Mongoid::Timestamps` for automatic timestamp management.
+
+**Core Models:**
+- `User` - User accounts with authentication
+- `Note` - Individual notes with dynamic content
+- `Collection` - Organized groups of notes
+- `Friendship` - User relationships
+- `Sharing` - Polymorphic sharing mechanism
+- `Notification` - User notifications
+
+### Controllers
+
+The application follows Rails RESTful conventions with both standard and admin namespaces.
+
+**Main Controllers:**
+- `ApplicationController` - Base controller with authentication helpers
+- `SessionController` - Login/logout functionality
+- `UsersController` - User management
+- `NotesController` - Note CRUD operations
+- `CollectionsController` - Collection management
+- `FriendshipsController` - Friend relationships
+- `SharingController` - Content sharing
+- `NotificationsController` - Notification handling
+
+**Admin Namespace:**
+All main resources have admin counterparts for administrative operations:
+- `Admin::NotesController`
+- `Admin::UsersController`
+- `Admin::CollectionsController`
+- `Admin::FriendshipsController`
+
+Source: `config/routes.rb:15-20`
+
+### Views
+
+Lynx Note uses Rails ERB templates with Hotwire (Turbo + Stimulus) for reactive UI updates without full page reloads.
+
+## Application Structure
+
+### Routing Architecture
+
+```ruby
+# RESTful Resources
+resources :notes
+resources :users
+resources :collections
+resources :friendships
+
+# Admin Resources (namespaced)
+namespace :admin do
+  resources :notes
+  resources :users
+  resources :collections
+  resources :friendships
+end
+
+# Authentication Routes
+get 'login', to: 'session#new'
+post 'login', to: 'session#create'
+get 'logout', to: 'session#destroy'
+
+# Sharing Routes (custom)
+get 'sharing/:object', to: 'sharing#new'
+post 'sharing_create', to: 'sharing#create'
+get 'sharing_edit/:id', to: 'sharing#edit'
+post 'sharing_update/:id', to: 'sharing#update'
+delete 'sharing_delete/:id', to: 'sharing#destroy'
+delete 'unsharing/:id', to: 'sharing#unsharing'
+```
+
+Source: `config/routes.rb`
+
+### Base Controller Helpers
+
+The `ApplicationController` provides authentication helpers available to all controllers:
+
+```ruby
+helper_method :current_user
+helper_method :user_aunthenticated?
+helper_method :user_admin?
+
+def current_user
+  @current_user ||= User.find(session[:user_id]) if session[:user_id]
+rescue Mongoid::Errors::DocumentNotFound
+  session.delete :user_id
+  nil
+end
+
+def user_aunthenticated?
+  !current_user.nil?
+end
+
+def user_admin?
+  current_user.role == 'admin'
+end
+```
+
+Source: `app/controllers/application_controller.rb:2-19`
+
+## Data Layer
+
+### MongoDB Integration
+
+Lynx Note uses **Mongoid** for MongoDB integration, which provides:
+- Active Record-like syntax for document operations
+- Association management (has_many, belongs_to, polymorphic)
+- Validation framework
+- Callback system
+- Query interface
+
+### Document Structure
+
+All models inherit MongoDB document capabilities:
+
+```ruby
+class User
+  include Mongoid::Document
+  include Mongoid::Timestamps  # Adds created_at, updated_at
+  
+  field :name, type: String
+  field :email, type: String
+  # ...
+end
+```
+
+### Polymorphic Associations
+
+The sharing system uses polymorphic associations to handle both Notes and Collections:
+
+```ruby
+class Sharing
+  belongs_to :shareable, polymorphic: true  # Can be Note or Collection
+  belongs_to :owner, class_name: 'User'
+end
+```
+
+Source: `app/models/sharing.rb:8`
+
+## Design Patterns
+
+### Session-Based Authentication
+User authentication is managed through Rails sessions with BCrypt password hashing.
+
+### Polymorphic Sharing
+A single `Sharing` model handles sharing for both Notes and Collections using polymorphic associations.
+
+### Cascade Deletion
+Models use `dependent: :destroy` to maintain referential integrity:
+- Deleting a user removes their notes, collections, and friendships
+- Deleting a note or collection removes associated sharings
+
+### Callback Hooks
+Models implement callbacks for cleanup operations:
+- `before_destroy :remove_friendships` in User
+- `after_destroy :cleanup_sharings` in Friendship
+
+Source: `app/models/user.rb:24`, `app/models/friendship.rb:13`
+
+## Security
+
+### Authentication
+- BCrypt password hashing
+- Session-based authentication
+- Password format validation
+
+### Authorization
+- Role-based access control (admin/user)
+- Before action filters for protected routes
+- User ownership validation
+
+See [Authentication](/development/authentication) for detailed authentication implementation.

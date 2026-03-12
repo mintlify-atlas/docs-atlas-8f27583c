@@ -1,0 +1,402 @@
+---
+title: "Authentication System"
+description: "BCrypt-based authentication implementation in Lynx Note"
+---
+
+## Overview
+
+Lynx Note implements a session-based authentication system using BCrypt for password hashing. The authentication flow is handled through the `User` model and `SessionController`.
+
+## Authentication Stack
+
+- **Password Hashing**: BCrypt (~> 3.1.7)
+- **Session Management**: Rails built-in session store
+- **Password Validation**: Custom validation with BCrypt format checking
+
+## User Model Authentication
+
+### Password Hashing
+
+The User model overrides the password setter to automatically hash passwords using BCrypt:
+
+```ruby
+def password=(unencrypted_password)
+  if unencrypted_password.present? && !bcrypt_password_format?(unencrypted_password)
+    super(BCrypt::Password.create(unencrypted_password))
+  else
+    super(unencrypted_password)
+  end
+end
+
+def bcrypt_password_format?(string)
+  /\A\$2[ayb]\$.{56}\z/.match?(string)
+end
+```
+
+Source: `app/models/user.rb:41-51`
+
+**How it works:**
+
+1. When a password is assigned (`user.password = "secret"`)
+2. Checks if the password is not already in BCrypt format
+3. Hashes the password using `BCrypt::Password.create()`
+4. Stores the hashed password in the database
+
+**BCrypt Format:**
+BCrypt passwords follow the pattern: `$2a$`, `$2b$`, or `$2y$` followed by 56 characters.
+
+### Password Authentication
+
+The `authenticate` method verifies a password against the stored hash:
+
+```ruby
+def authenticate(unencrypted_password)
+  if BCrypt::Password.new(self.password) == unencrypted_password
+    self
+  else
+    false
+  end
+end
+```
+
+Source: `app/models/user.rb:53-59`
+
+**Returns:**
+- `self` (the User object) if authentication succeeds
+- `false` if authentication fails
+
+### Password Validation
+
+The User model validates password presence based on context:
+
+```ruby
+def validate_content
+  if password_update.present?
+    # Updating user - password is optional
+    if name.blank? || email.blank?
+      errors.add(:name, "You must provide a name.") if name.blank?
+      errors.add(:email, "You must provide an email.") if email.blank?
+    end
+  else
+    # Creating user - password is required
+    if name.blank? || email.blank? || password.blank?
+      errors.add(:name, "You must provide a name.") if name.blank?
+      errors.add(:email, "You must provide an email.") if email.blank?
+      errors.add(:password, "You must provide a password.") if password.blank?
+    end
+  end
+
+  if email.present? && !email.match?(URI::MailTo::EMAIL_REGEXP)
+    errors.add(:email, "It is invalid, does not have the format")
+  end
+end
+```
+
+Source: `app/models/user.rb:83-100`
+
+## Session Controller
+
+The `SessionController` handles login and logout operations.
+
+### Login Flow
+
+#### Route Configuration
+
+```ruby
+get 'login', to: 'session#new', as: 'login'
+post 'login', to: 'session#create', as: 'login_post'
+```
+
+Source: `config/routes.rb:32-33`
+
+#### Login Form (new action)
+
+```ruby
+def new
+end
+```
+
+The `new` action simply renders the login form. It includes a before action to redirect already-authenticated users:
+
+```ruby
+before_action :is_login, only: [:new]
+```
+
+Source: `session_controller.rb:2`
+
+#### Authentication (create action)
+
+```ruby
+def create
+  email = params[:email]
+  password = params[:password]
+
+  if email.blank? || password.blank?
+    flash.now[:alert] = "Username and password can't be blank"
+
+    @email_error = true if email.blank?
+    @password_error = true if password.blank?
+    
+    render :new, status: :unprocessable_entity and return
+  else
+    @user = User.where(email: email).first
+    if @user.nil?
+      flash.now[:alert] = "Email or password is invalid"
+      @email_error = true
+      @password_error = true
+      render :new, status: :unprocessable_entity and return
+    elsif @user.authenticate(password)
+      session[:user_id] = @user.id
+      redirect_to root_url, notice: "Welcome back! #{@user.name.capitalize} ♥" 
+    else
+      flash.now[:alert] = "Email or password is invalid"
+      @email_error = true
+      @password_error = true
+      render :new, status: :unprocessable_entity
+    end
+  end
+end
+```
+
+Source: `session_controller.rb:7-35`
+
+**Authentication Steps:**
+
+1. **Input Validation**: Check if email and password are present
+2. **User Lookup**: Find user by email using `User.where(email: email).first`
+3. **User Existence**: Verify user exists in database
+4. **Password Verification**: Call `@user.authenticate(password)`
+5. **Session Creation**: Store `user_id` in session on success
+6. **Error Handling**: Set error flags and re-render form on failure
+
+**Security Features:**
+- Generic error messages ("Email or password is invalid") to prevent user enumeration
+- Re-renders form with error indicators instead of redirecting
+- Returns 422 Unprocessable Entity status on validation errors
+
+### Logout Flow
+
+```ruby
+def destroy
+  session.delete :user_id
+  redirect_to root_url, notice: "See you soon! ♥"
+end
+```
+
+Source: `session_controller.rb:37-40`
+
+**Route:**
+```ruby
+get 'logout', to: 'session#destroy', as: 'logout'
+```
+
+Source: `config/routes.rb:34`
+
+## Application Controller Helpers
+
+The `ApplicationController` provides authentication helper methods available throughout the application:
+
+```ruby
+helper_method :current_user
+helper_method :user_aunthenticated?
+helper_method :user_admin?
+```
+
+Source: `application_controller.rb:2-4`
+
+### current_user
+
+Retrieves the currently logged-in user from the session:
+
+```ruby
+def current_user
+  @current_user ||= User.find(session[:user_id]) if session[:user_id]
+rescue Mongoid::Errors::DocumentNotFound
+  session.delete :user_id
+  nil
+end
+```
+
+Source: `application_controller.rb:6-11`
+
+**Features:**
+- Memoizes the user in `@current_user` to avoid multiple database queries
+- Handles deleted users gracefully by clearing the session
+- Returns `nil` if no user is logged in
+
+### user_aunthenticated?
+
+Checks if a user is currently logged in:
+
+```ruby
+def user_aunthenticated?
+  !current_user.nil?
+end
+```
+
+Source: `application_controller.rb:13-15`
+
+### user_admin?
+
+Checks if the current user has admin privileges:
+
+```ruby
+def user_admin?
+  current_user.role == 'admin'
+end
+```
+
+Source: `application_controller.rb:17-19`
+
+## Authorization Filters
+
+The application provides before action filters for protecting routes:
+
+### is_login
+
+Redirects authenticated users away from login page:
+
+```ruby
+def is_login
+  return redirect_to root_path unless current_user.nil?
+end
+```
+
+Source: `application_controller.rb:21-23`
+
+**Usage:**
+```ruby
+before_action :is_login, only: [:new]
+```
+
+### validate_user
+
+Requires user authentication:
+
+```ruby
+def validate_user
+  return redirect_to root_path unless user_aunthenticated?
+end
+```
+
+Source: `application_controller.rb:25-27`
+
+**Usage:**
+```ruby
+before_action :validate_user, only: [:edit, :update, :destroy]
+```
+
+### validate_admin
+
+Requires admin role:
+
+```ruby
+def validate_admin
+  return redirect_to root_path unless user_aunthenticated? && user_admin?
+end
+```
+
+Source: `application_controller.rb:29-31`
+
+**Usage:**
+```ruby
+before_action :validate_admin  # In Admin namespace controllers
+```
+
+## Security Best Practices
+
+### Password Storage
+
+✅ **Do:**
+- Use BCrypt for password hashing (configured with default cost factor)
+- Store only hashed passwords in database
+- Never log or display passwords
+
+❌ **Don't:**
+- Store plain text passwords
+- Use weak hashing algorithms (MD5, SHA1)
+- Transmit passwords without HTTPS
+
+### Session Management
+
+✅ **Do:**
+- Clear session on logout
+- Handle missing/deleted users gracefully
+- Use Rails default session security features
+
+❌ **Don't:**
+- Store sensitive data in sessions beyond user_id
+- Use predictable session IDs
+- Allow session fixation
+
+### Authentication Flow
+
+✅ **Do:**
+- Use generic error messages to prevent user enumeration
+- Return appropriate HTTP status codes (422 for validation errors)
+- Verify both user existence and password
+
+❌ **Don't:**
+- Reveal whether email exists in error messages
+- Log failed authentication attempts with sensitive data
+- Allow brute force attacks (consider rate limiting)
+
+## Example: Protecting a Controller
+
+```ruby
+class NotesController < ApplicationController
+  before_action :validate_user
+  before_action :set_note, only: [:show, :edit, :update, :destroy]
+  before_action :verify_ownership, only: [:edit, :update, :destroy]
+
+  def index
+    @notes = current_user.notes
+  end
+
+  def create
+    @note = current_user.notes.build(note_params)
+    if @note.save
+      redirect_to @note, notice: 'Note created successfully'
+    else
+      render :new
+    end
+  end
+
+  private
+
+  def verify_ownership
+    redirect_to root_path unless @note.user == current_user
+  end
+end
+```
+
+## Testing Authentication
+
+### Testing Password Hashing
+
+```ruby
+user = User.new(email: 'test@example.com', name: 'Test User')
+user.password = 'secret123'
+user.save
+
+# Password is hashed
+puts user.password
+# => "$2a$12$K5i9Z..."
+
+# Authentication works
+puts user.authenticate('secret123')
+# => #<User _id: ...>
+
+puts user.authenticate('wrong')
+# => false
+```
+
+### Testing Session
+
+```ruby
+# In Rails console
+app.get '/login'
+app.post '/login', params: { email: 'user@example.com', password: 'password' }
+app.response.status  # => 302 (redirect on success)
+app.session[:user_id]  # => BSON::ObjectId('...')
+```

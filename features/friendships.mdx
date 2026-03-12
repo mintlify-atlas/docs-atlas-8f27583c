@@ -1,0 +1,354 @@
+---
+title: 'Friendships'
+description: 'Connect with other users through friend requests and manage collaborative relationships'
+icon: 'user-group'
+---
+
+## Overview
+
+The friendship system in Lynx Note enables users to connect with each other, forming the foundation for collaborative note-taking through sharing. Friendships follow a request-accept workflow to ensure both parties agree to the connection.
+
+## Friendship Model
+
+### Data Structure
+
+```ruby app/models/friendship.rb
+class Friendship
+  include Mongoid::Document
+  include Mongoid::Timestamps
+
+  field :status, type: String, default: "pending"
+
+  belongs_to :user, inverse_of: :initiated_friendships
+  belongs_to :friend, class_name: 'User', inverse_of: :received_friendships
+
+  scope :accepted, -> { where(status: 'accepted') }
+  scope :pending, -> { where(status: 'pending') }
+end
+```
+
+### Key Components
+
+<CardGroup cols={3}>
+  <Card title="User" icon="user">
+    The person who initiated the friendship request
+  </Card>
+  <Card title="Friend" icon="user-plus">
+    The person who received the friendship request
+  </Card>
+  <Card title="Status" icon="signal">
+    Current state: `pending` or `accepted`
+  </Card>
+</CardGroup>
+
+### Relationship Types
+
+Each user has two types of friendships (from `app/models/user.rb:19`):
+
+```ruby
+has_many :initiated_friendships, class_name: 'Friendship', inverse_of: :user, dependent: :destroy
+has_many :received_friendships, class_name: 'Friendship', inverse_of: :friend, dependent: :destroy
+```
+
+<Info>
+  This bidirectional approach allows tracking who initiated each friendship while maintaining a single Friendship model.
+</Info>
+
+## Friendship Lifecycle
+
+### 1. Sending a Friend Request
+
+<Steps>
+  <Step title="Access Friend Request Form">
+    Navigate to `/friendships/new` to see available users
+  </Step>
+  <Step title="View Available Users">
+    The system filters out users who are already friends or have pending requests:
+    ```ruby app/controllers/friendships_controller.rb:42
+    pending_friend_ids = current_user.initiated_friendships.pending.pluck(:friend_id)
+    accepted_friend_ids = current_user.initiated_friendships.accepted.pluck(:friend_id)
+    received_pending_friend_ids = current_user.received_friendships.pending.pluck(:user_id)
+    received_accepted_friend_ids = current_user.received_friendships.accepted.pluck(:user_id)
+    
+    excluded_user_ids = pending_friend_ids + accepted_friend_ids + received_pending_friend_ids + received_accepted_friend_ids
+    @users = User.where.not(id: current_user.id).to_a.reject { |user| excluded_user_ids.include?(user.id) }
+    ```
+  </Step>
+  <Step title="Select a User">
+    Choose a user to send a friend request to
+  </Step>
+  <Step title="Create Request">
+    Submit the form to create a pending friendship:
+    ```ruby app/controllers/friendships_controller.rb:61
+    @friendship = current_user.initiated_friendships.build(friend: @friend)
+    @friendship.save # Status defaults to 'pending'
+    ```
+  </Step>
+  <Step title="Notification Sent">
+    The recipient receives a notification:
+    ```ruby
+    Notification.create(
+      user: @friend,
+      message: "#{current_user.name.capitalize} sent you a friend request.",
+      notification_type: 'friend_request'
+    )
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  You must select a user when creating a friend request. The form will reject empty submissions.
+</Warning>
+
+### 2. Accepting a Friend Request
+
+<Steps>
+  <Step title="View Pending Requests">
+    Check your pending friend requests at `/friendships`:
+    ```ruby app/controllers/friendships_controller.rb:10
+    @friendship_requests = current_user.received_friendships.pending.map do |f|
+      { id: f.id, friend: f.user }
+    end
+    ```
+  </Step>
+  <Step title="Accept Request">
+    Update the friendship status from `pending` to `accepted`:
+    ```ruby app/controllers/friendships_controller.rb:78
+    @friendship.update(status: 'accepted')
+    ```
+  </Step>
+  <Step title="Notification Sent">
+    The original requester receives an acceptance notification:
+    ```ruby
+    Notification.create(
+      user: @friendship.user,
+      message: "#{current_user.name.capitalize} has accepted your friendship request.",
+      notification_type: 'friend_request'
+    )
+    ```
+  </Step>
+</Steps>
+
+### 3. Declining or Removing Friendships
+
+Both pending and accepted friendships can be deleted:
+
+<Tabs>
+  <Tab title="Decline Request (Recipient)">
+    Recipients can decline pending requests:
+    ```ruby
+    @friendship.destroy
+    # Notifies requester of decline
+    ```
+  </Tab>
+  <Tab title="Cancel Request (Sender)">
+    Senders can cancel pending requests:
+    ```ruby
+    @friendship.destroy
+    # No notification sent for self-cancellation
+    ```
+  </Tab>
+  <Tab title="End Friendship">
+    Either party can end an accepted friendship:
+    ```ruby
+    @friendship.destroy
+    # Notifies other party of friendship deletion
+    ```
+  </Tab>
+</Tabs>
+
+## Deletion Notifications
+
+Notifications vary based on the deletion context (from `app/controllers/friendships_controller.rb:109`):
+
+```ruby
+def after_friendship_delete(friendship)
+  pending = friendship.status == 'pending'
+
+  if pending && friendship.user != current_user._id
+    # Recipient declined
+    Notification.create(
+      user: friendship.user,
+      message: "#{current_user.name.capitalize} has declined your request.",
+      notification_type: 'friend_request'
+    )
+  else
+    # Friendship ended or request cancelled
+    Notification.create(
+      user: friendship.user,
+      message: "#{current_user.name.capitalize} has deleted your friendship.",
+      notification_type: 'friend_request'
+    )
+  end
+end
+```
+
+## Sharing Cleanup
+
+When a friendship is destroyed, shared content access is automatically revoked:
+
+```ruby app/models/friendship.rb:16
+def cleanup_sharings
+  # Remove friend from all your sharings
+  Sharing.where(:shared_with.in => [self.friend.id.to_s]).each do |sharing|
+    sharing.pull(shared_with: self.friend.id.to_s)
+  end
+  
+  # Remove you from all friend's sharings
+  Sharing.where(:shared_with.in => [self.user.id.to_s]).each do |sharing|
+    sharing.pull(shared_with: self.user.id.to_s)
+  end
+end
+```
+
+<Check>
+  This automatic cleanup ensures former friends immediately lose access to shared notes and collections.
+</Check>
+
+## Viewing Friendships
+
+### Friendships Index
+
+The `/friendships` page displays three categories:
+
+<Tabs>
+  <Tab title="Incoming Requests">
+    Pending requests you've received:
+    ```ruby
+    @friendship_requests = current_user.received_friendships.pending.map do |f|
+      { id: f.id, friend: f.user }
+    end
+    ```
+  </Tab>
+  <Tab title="Outgoing Requests">
+    Pending requests you've sent:
+    ```ruby
+    @pending_friendships = current_user.initiated_friendships.pending.map do |f|
+      { id: f.id, friend: f.friend }
+    end
+    ```
+  </Tab>
+  <Tab title="Accepted Friendships">
+    All accepted friendships with shared content counts:
+    ```ruby app/controllers/friendships_controller.rb:18
+    @friendships = current_user.initiated_friendships.accepted.map do |f|
+      {
+        id: f.id,
+        friend: f.friend,
+        notes: current_user.shared_notes_by(f.friend),
+        collections: current_user.shared_collections_by(f.friend)
+      }
+    end + current_user.received_friendships.accepted.map do |f|
+      {
+        id: f.id,
+        friend: f.user,
+        notes: current_user.shared_notes_by(f.user),
+        collections: current_user.shared_collections_by(f.user)
+      }
+    end
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+  Accepted friendships show notes and collections that each friend has shared with you, providing quick access to collaborative content.
+</Info>
+
+## Scopes
+
+The Friendship model provides convenient scopes for filtering:
+
+<CodeGroup>
+```ruby Accepted Friendships
+Friendship.accepted
+# Returns friendships where status == 'accepted'
+```
+
+```ruby Pending Friendships
+Friendship.pending
+# Returns friendships where status == 'pending'
+```
+</CodeGroup>
+
+From `app/models/friendship.rb:10`:
+```ruby
+scope :accepted, -> { where(status: 'accepted') }
+scope :pending, -> { where(status: 'pending') }
+```
+
+## User Cleanup
+
+When a user account is deleted, all friendship relationships are removed:
+
+```ruby app/models/user.rb:78
+def remove_friendships
+  self.initiated_friendships.destroy_all
+  Friendship.where(friend_id: self.id).destroy_all
+end
+```
+
+This ensures:
+- All sent friend requests are removed
+- All received friend requests are removed
+- No orphaned friendship records remain
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/friendships` | View all friendships and requests |
+| GET | `/friendships/new` | New friend request form |
+| POST | `/friendships` | Send a friend request |
+| PATCH | `/friendships/:id` | Accept a friend request |
+| DELETE | `/friendships/:id` | Decline/cancel/end friendship |
+
+## Integration with Sharing
+
+Friendships enable the sharing system:
+
+1. **Friend List**: When creating a share, only accepted friendships appear:
+   ```ruby app/controllers/sharing_controller.rb:12
+   @friendships = current_user.initiated_friendships.accepted.map do |f|
+     { id: f.id, friend: f.friend }
+   end + current_user.received_friendships.accepted.map do |f|
+     { id: f.id, friend: f.user }
+   end
+   ```
+
+2. **Access Control**: Shared content is only accessible to users with accepted friendships
+
+3. **Automatic Cleanup**: Ending a friendship automatically removes all shared access
+
+<Tip>
+  Build your friend network first, then use sharing to collaborate on notes and collections with those friends.
+</Tip>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Accept Requests from Known Users Only">
+    Since friends gain edit access to shared content, only accept requests from users you trust.
+  </Accordion>
+  <Accordion title="Review Shared Content Before Ending Friendships">
+    Remember that ending a friendship revokes all shared access. Review shared content first if needed.
+  </Accordion>
+  <Accordion title="Use Notifications">
+    Check your notifications regularly for friend requests and friendship updates.
+  </Accordion>
+  <Accordion title="Clean Up Unused Requests">
+    Cancel pending requests you no longer wish to pursue to keep your friendship list organized.
+  </Accordion>
+</AccordionGroup>
+
+## Notification Types
+
+Friendship-related notifications use the `friend_request` type and include:
+
+- New friend request received
+- Friend request accepted
+- Friend request declined
+- Friendship deleted
+
+<Note>
+  Old friend request notifications are automatically cleaned up when new ones are created to prevent notification spam.
+</Note>

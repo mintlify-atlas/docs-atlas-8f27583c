@@ -1,0 +1,293 @@
+---
+title: 'Collections'
+description: 'Organize your notes into groups with collections'
+icon: 'folder'
+---
+
+## Overview
+
+Collections help you organize notes into logical groups. A collection acts as a container that can hold multiple notes, and notes can belong to multiple collections simultaneously.
+
+## Collection Structure
+
+### Data Model
+
+Collections use MongoDB with dynamic attributes:
+
+```ruby app/models/collection.rb
+class Collection
+  include Mongoid::Document
+  include Mongoid::Timestamps
+  include Mongoid::Attributes::Dynamic
+
+  field :name, type: String
+  field :notes, type: Array, default: []
+  has_many :sharings, as: :shareable, dependent: :destroy
+
+  belongs_to :user
+end
+```
+
+<Info>
+  The `notes` field stores an array of note IDs (BSON::ObjectId), creating a many-to-many relationship without a traditional join table.
+</Info>
+
+### Key Features
+
+<CardGroup cols={2}>
+  <Card title="Flexible Organization" icon="sitemap">
+    One note can exist in multiple collections simultaneously
+  </Card>
+  <Card title="Shareable" icon="share-nodes">
+    Share entire collections with friends for collaborative access
+  </Card>
+  <Card title="Dynamic Attributes" icon="code">
+    Runtime attribute assignment for enhanced metadata
+  </Card>
+  <Card title="User Ownership" icon="user">
+    Each collection belongs to a specific user
+  </Card>
+</CardGroup>
+
+## Creating Collections
+
+<Steps>
+  <Step title="Access Creation Form">
+    Navigate to `/collections/new` to create a new collection
+  </Step>
+  <Step title="Provide a Name">
+    Enter a descriptive name for your collection (required)
+  </Step>
+  <Step title="Save Collection">
+    Submit the form to create your collection
+  </Step>
+</Steps>
+
+### Validation
+
+Collections must have a name (from `app/models/collection.rb:20`):
+
+```ruby
+def validate_title
+  if name.blank?
+    errors.add(:base, "You must provide a title.")
+  end
+end
+```
+
+<Warning>
+  Empty collection names are not allowed. You must provide a title to create a collection.
+</Warning>
+
+## Managing Notes in Collections
+
+### Adding Notes
+
+Notes are added to collections through the note creation/editing interface:
+
+1. When creating or editing a note, you can select collections
+2. The `CollectionsNotesService` handles the relationship:
+
+```ruby
+service = CollectionsNotesService.new(@note)
+service.add_collections(collection_ids)
+```
+
+3. The note ID is pushed to the collection's `notes` array:
+
+```ruby app/services/collections_notes_service.rb:18
+collection.notes.push(@note.id)
+collection.save
+```
+
+### Removing Notes
+
+Notes are removed from collections in several scenarios:
+
+<Tabs>
+  <Tab title="Manual Removal">
+    When editing a note, deselect a collection to remove the note from it:
+    ```ruby
+    service.update_collections(desired_collection_ids)
+    ```
+  </Tab>
+  <Tab title="Note Deletion">
+    When a note is deleted, it's automatically removed from all collections:
+    ```ruby
+    service.delete_collections
+    ```
+  </Tab>
+</Tabs>
+
+## Viewing Collections
+
+### List View
+
+Access your collections at `/collections` to see:
+- Your own collections
+- Collections shared with you
+- Number of notes in each collection (sorted by size)
+- Sharing status
+
+### Collection Data Structure
+
+The index view enhances each collection with runtime attributes:
+
+```ruby app/controllers/collections_controller.rb:32
+collection.assign_attributes(notes: notes)
+collection.assign_attributes(sharing: {
+  shared: collection.sharings.any?,
+  id: collection.sharings.first&.id,
+  is_shared: !current_user.collections.include?(collection)
+})
+```
+
+<Note>
+  Collections are sorted by the number of notes they contain (descending) for easy access to your most-used collections.
+</Note>
+
+### Detail View
+
+When viewing a shared collection at `/collections/:id`:
+- Only accessible if the collection is shared with you
+- Shows all notes within the collection
+- Provides the sharing ID for management
+
+## Access Control
+
+### Ownership Verification
+
+Only collection owners can delete collections (from `app/controllers/collections_controller.rb:7`):
+
+```ruby
+def is_mine
+  @collection = Collection.find(params[:id])
+  unless @collection.user_id == current_user.id
+    redirect_to root_url
+  end
+end
+```
+
+### Shared Access
+
+You can view and edit a collection if (from `app/controllers/collections_controller.rb:13`):
+- You own the collection, OR
+- The collection has been shared with you
+
+```ruby
+sharing = Sharing.where(shareable_id: @collection.id).first
+@friend_sharing = sharing&.shared_with&.include?(current_user.id.to_s)
+```
+
+## Updating Collections
+
+<Steps>
+  <Step title="Access Edit Form">
+    Navigate to `/collections/:id/edit` for a collection you own or that's shared with you
+  </Step>
+  <Step title="Modify Name">
+    Update the collection name as needed
+  </Step>
+  <Step title="Save Changes">
+    Submit the form to update the collection
+  </Step>
+</Steps>
+
+### Update Redirects
+
+After updating, the redirect behavior differs based on sharing status:
+
+```ruby app/controllers/collections_controller.rb:106
+if @friend_sharing
+  redirect_to collection_path(@collection)
+else
+  redirect_to collections_path
+end
+```
+
+## Deleting Collections
+
+<Steps>
+  <Step title="Verify Ownership">
+    Only the collection owner can delete it
+  </Step>
+  <Step title="Remove Sharings">
+    All sharing relationships are automatically destroyed (cascade delete)
+  </Step>
+  <Step title="Delete Collection">
+    The collection document is removed from MongoDB
+  </Step>
+</Steps>
+
+<Warning>
+  Deleting a collection does NOT delete the notes within it. Notes remain intact and accessible.
+</Warning>
+
+## Sharing Collections
+
+Collections support the polymorphic sharing system:
+
+```ruby app/models/collection.rb:8
+has_many :sharings, as: :shareable, dependent: :destroy
+```
+
+This allows collections to be shared with friends just like individual notes. See the [Sharing documentation](/features/sharing) for details.
+
+## Collections & Notes Service
+
+The `CollectionsNotesService` provides centralized logic for managing note-collection relationships:
+
+### Service Methods
+
+<CodeGroup>
+```ruby Get Collections
+# Find which collections contain a note
+service.get_collections(collections)
+# Returns array of collection IDs
+```
+
+```ruby Add to Collections
+# Add note to specified collections
+service.add_collections(collection_ids)
+```
+
+```ruby Update Collections
+# Sync note's collection memberships
+service.update_collections(desired_collection_ids)
+# Removes from unselected, adds to selected
+```
+
+```ruby Remove from All
+# Remove note from all collections
+service.delete_collections
+```
+</CodeGroup>
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/collections` | List all collections (owned + shared) |
+| GET | `/collections/:id` | View a shared collection's notes |
+| GET | `/collections/new` | New collection form |
+| POST | `/collections` | Create a collection |
+| GET | `/collections/:id/edit` | Edit collection form |
+| PATCH | `/collections/:id` | Update a collection |
+| DELETE | `/collections/:id` | Delete a collection |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Organize by Topic or Project">
+    Create collections based on projects, topics, or areas of your life for easy navigation.
+  </Accordion>
+  <Accordion title="Use Descriptive Names">
+    Choose clear, descriptive collection names to make them easy to find and understand.
+  </Accordion>
+  <Accordion title="Share Collections for Collaboration">
+    Instead of sharing individual notes, share an entire collection with collaborators for streamlined access.
+  </Accordion>
+  <Accordion title="Multi-Collection Notes">
+    Don't hesitate to add a note to multiple collections if it's relevant to different contexts.
+  </Accordion>
+</AccordionGroup>

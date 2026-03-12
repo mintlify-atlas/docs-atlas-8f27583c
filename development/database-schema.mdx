@@ -1,0 +1,373 @@
+---
+title: "Database Schema"
+description: "MongoDB models, relationships, and field definitions"
+---
+
+## Overview
+
+Lynx Note uses MongoDB as its database with Mongoid as the Object-Document Mapper (ODM). All models include `Mongoid::Timestamps` which automatically adds `created_at` and `updated_at` fields.
+
+## Models
+
+### User
+
+The core model representing user accounts with authentication and relationships.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | String | User's display name |
+| `email` | String | User's email (must match email format) |
+| `password` | String | BCrypt-hashed password |
+| `role` | String | User role (e.g., 'admin', 'user') |
+| `created_at` | DateTime | Auto-generated timestamp |
+| `updated_at` | DateTime | Auto-generated timestamp |
+
+**Relationships:**
+
+```ruby
+has_many :collections, dependent: :destroy
+has_many :notes, dependent: :destroy
+has_many :notifications, dependent: :destroy
+
+has_many :initiated_friendships, class_name: 'Friendship', 
+         inverse_of: :user, dependent: :destroy
+has_many :received_friendships, class_name: 'Friendship', 
+         inverse_of: :friend, dependent: :destroy
+
+has_many :sharings, as: :owner, dependent: :destroy
+```
+
+Source: `app/models/user.rb:14-22`
+
+**Key Methods:**
+
+<Expandable title="password=(unencrypted_password)">
+  Overrides the password setter to automatically hash passwords using BCrypt:
+  
+  ```ruby
+  def password=(unencrypted_password)
+    if unencrypted_password.present? && !bcrypt_password_format?(unencrypted_password)
+      super(BCrypt::Password.create(unencrypted_password))
+    else
+      super(unencrypted_password)
+    end
+  end
+  ```
+  
+  Source: `app/models/user.rb:41-47`
+</Expandable>
+
+<Expandable title="authenticate(unencrypted_password)">
+  Validates a password against the stored hash:
+  
+  ```ruby
+  def authenticate(unencrypted_password)
+    if BCrypt::Password.new(self.password) == unencrypted_password
+      self
+    else
+      false
+    end
+  end
+  ```
+  
+  Source: `app/models/user.rb:53-59`
+</Expandable>
+
+<Expandable title="shared_notes_by(friend)">
+  Retrieves notes shared with this user by a specific friend:
+  
+  ```ruby
+  def shared_notes_by(friend)
+    note_ids = Sharing.where(owner: friend, shared_with: self.id.to_s, 
+                             shareable_type: 'Note').pluck(:shareable_id)
+    Note.where(:id.in => note_ids)
+  end
+  ```
+  
+  Source: `app/models/user.rb:61-64`
+</Expandable>
+
+**Validations:**
+- Name, email, and password must be present (unless updating)
+- Email must match URI::MailTo::EMAIL_REGEXP format
+
+Source: `app/models/user.rb:83-100`
+
+---
+
+### Note
+
+Represents individual notes with dynamic content structure.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | String | Note title (optional if content exists) |
+| `content` | Array | Array of JSON strings containing note blocks |
+| `user_id` | BSON::ObjectId | Reference to owning user |
+| `created_at` | DateTime | Auto-generated timestamp |
+| `updated_at` | DateTime | Auto-generated timestamp |
+
+**Relationships:**
+
+```ruby
+belongs_to :user
+has_many :sharings, as: :shareable, dependent: :destroy
+```
+
+Source: `app/models/note.rb:7-9`
+
+**Content Structure:**
+
+The `content` field stores an array of JSON strings, where each string represents a content block:
+
+```json
+[
+  "{\"type\": \"text\", \"value\": \"Note content here\"}",
+  "{\"type\": \"image\", \"value\": \"image_url\"}"
+]
+```
+
+**Validations:**
+- Must have at least a title OR content with non-blank value
+- Custom validation iterates through content array to check for non-empty values
+
+Source: `app/models/note.rb:14-30`
+
+---
+
+### Collection
+
+Organizes notes into groups.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | String | Collection name (required) |
+| `notes` | Array | Array of note IDs belonging to this collection |
+| `user_id` | BSON::ObjectId | Reference to owning user |
+| `created_at` | DateTime | Auto-generated timestamp |
+| `updated_at` | DateTime | Auto-generated timestamp |
+
+**Relationships:**
+
+```ruby
+belongs_to :user
+has_many :sharings, as: :shareable, dependent: :destroy
+```
+
+Source: `app/models/collection.rb:10`
+
+**Special Features:**
+
+```ruby
+include Mongoid::Attributes::Dynamic  # Allows dynamic attributes
+```
+
+Source: `app/models/collection.rb:4`
+
+**Validations:**
+- Name must be present
+
+Source: `app/models/collection.rb:19-23`
+
+---
+
+### Friendship
+
+Manages user-to-user relationships.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | String | Friendship status (default: "pending") |
+| `user_id` | BSON::ObjectId | User who initiated the friendship |
+| `friend_id` | BSON::ObjectId | User who received the friendship request |
+| `created_at` | DateTime | Auto-generated timestamp |
+| `updated_at` | DateTime | Auto-generated timestamp |
+
+**Relationships:**
+
+```ruby
+belongs_to :user, inverse_of: :initiated_friendships
+belongs_to :friend, class_name: 'User', inverse_of: :received_friendships
+```
+
+Source: `app/models/friendship.rb:7-8`
+
+**Scopes:**
+
+```ruby
+scope :accepted, -> { where(status: 'accepted') }
+scope :pending, -> { where(status: 'pending') }
+```
+
+Source: `app/models/friendship.rb:10-11`
+
+**Callbacks:**
+
+<Expandable title="cleanup_sharings (after_destroy)">
+  Removes friend from shared_with arrays when friendship is destroyed:
+  
+  ```ruby
+  def cleanup_sharings
+    Sharing.where(:shared_with.in => [self.friend.id.to_s]).each do |sharing|
+      sharing.pull(shared_with: self.friend.id.to_s)
+    end
+    Sharing.where(:shared_with.in => [self.user.id.to_s]).each do |sharing|
+      sharing.pull(shared_with: self.user.id.to_s)
+    end
+  end
+  ```
+  
+  Source: `app/models/friendship.rb:16-23`
+</Expandable>
+
+---
+
+### Sharing
+
+Polymorphic model that handles sharing of Notes and Collections.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `shared_with` | Array | Array of user IDs who have access |
+| `owner_id` | BSON::ObjectId | User who owns the shared item |
+| `shareable_id` | BSON::ObjectId | ID of shared Note or Collection |
+| `shareable_type` | String | Type of shared item ("Note" or "Collection") |
+| `created_at` | DateTime | Auto-generated timestamp |
+| `updated_at` | DateTime | Auto-generated timestamp |
+
+**Relationships:**
+
+```ruby
+belongs_to :owner, class_name: 'User', inverse_of: :sharings
+belongs_to :shareable, polymorphic: true  # Note or Collection
+```
+
+Source: `app/models/sharing.rb:5-8`
+
+**Polymorphic Association:**
+
+The `shareable` polymorphic association allows a single Sharing record to reference either a Note or Collection:
+
+```ruby
+# Sharing a Note
+sharing = Sharing.new(
+  owner: current_user,
+  shareable: note,  # Note instance
+  shared_with: [friend_id]
+)
+
+# Sharing a Collection
+sharing = Sharing.new(
+  owner: current_user,
+  shareable: collection,  # Collection instance
+  shared_with: [friend_id]
+)
+```
+
+---
+
+### Notification
+
+Stores user notifications.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | Notification message text |
+| `notification_type` | String | Type/category of notification |
+| `user_id` | BSON::ObjectId | User who receives the notification |
+| `created_at` | DateTime | Auto-generated timestamp |
+| `updated_at` | DateTime | Auto-generated timestamp |
+
+**Relationships:**
+
+```ruby
+belongs_to :user
+```
+
+Source: `app/models/notification.rb:8`
+
+---
+
+## Relationship Diagram
+
+```
+User
+├── has_many :notes
+├── has_many :collections
+├── has_many :notifications
+├── has_many :initiated_friendships (as :user)
+├── has_many :received_friendships (as :friend)
+└── has_many :sharings (as :owner)
+
+Note
+├── belongs_to :user
+└── has_many :sharings (polymorphic as :shareable)
+
+Collection
+├── belongs_to :user
+└── has_many :sharings (polymorphic as :shareable)
+
+Friendship
+├── belongs_to :user
+└── belongs_to :friend (User)
+
+Sharing
+├── belongs_to :owner (User)
+└── belongs_to :shareable (Note or Collection, polymorphic)
+
+Notification
+└── belongs_to :user
+```
+
+## Indexes
+
+Mongoid automatically creates indexes for:
+- `_id` fields (primary keys)
+- Foreign key fields (`user_id`, `friend_id`, etc.)
+- Polymorphic type/id combinations
+
+## Data Integrity
+
+### Cascade Deletion
+
+All relationships use `dependent: :destroy` to maintain referential integrity:
+
+- Deleting a **User** destroys:
+  - All their notes
+  - All their collections
+  - All their notifications
+  - All initiated and received friendships
+  - All sharings they own
+
+- Deleting a **Note** or **Collection** destroys:
+  - All associated sharing records
+
+- Deleting a **Friendship** triggers:
+  - Cleanup of sharing records (removes friend from shared_with arrays)
+
+### Custom Cleanup
+
+The User model implements custom cleanup before deletion:
+
+```ruby
+before_destroy :remove_friendships
+
+def remove_friendships
+  self.initiated_friendships.destroy_all
+  Friendship.where(friend_id: self.id).destroy_all
+end
+```
+
+Source: `app/models/user.rb:78-81`

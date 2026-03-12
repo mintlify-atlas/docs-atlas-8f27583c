@@ -1,0 +1,331 @@
+---
+title: 'Sharing'
+description: 'Share notes and collections with friends for collaborative access'
+icon: 'share-nodes'
+---
+
+## Overview
+
+Lynx Note's sharing system enables you to share notes and collections with your friends. The sharing model uses polymorphic associations to handle both notes and collections uniformly.
+
+## Sharing Model
+
+### Data Structure
+
+The sharing system is built on a polymorphic association:
+
+```ruby app/models/sharing.rb
+class Sharing
+  include Mongoid::Document
+  include Mongoid::Timestamps
+
+  belongs_to :owner, class_name: 'User', inverse_of: :sharings
+  belongs_to :shareable, polymorphic: true
+
+  field :shared_with, type: Array, default: []
+end
+```
+
+### Key Components
+
+<CardGroup cols={3}>
+  <Card title="Owner" icon="user">
+    The user who owns and shares the content
+  </Card>
+  <Card title="Shareable" icon="shapes">
+    The polymorphic resource (Note or Collection)
+  </Card>
+  <Card title="Shared With" icon="users">
+    Array of friend user IDs who have access
+  </Card>
+</CardGroup>
+
+<Info>
+  The polymorphic `shareable` can be either a `Note` or a `Collection`, allowing a unified sharing interface for both resource types.
+</Info>
+
+## Prerequisites
+
+Before you can share content, you must:
+
+1. Have at least one accepted friendship (see [Friendships](/features/friendships))
+2. Own the note or collection you want to share
+
+## Creating a Share
+
+<Steps>
+  <Step title="Access Sharing Form">
+    Click the share button on a note or collection to open `/sharing/new`
+  </Step>
+  <Step title="Select Friends">
+    Choose one or more friends from your accepted friendships:
+    ```ruby app/controllers/sharing_controller.rb:12
+    @friendships = current_user.initiated_friendships.accepted.map do |f| 
+      { id: f.id, friend: f.friend }
+    end + current_user.received_friendships.accepted.map do |f| 
+      { id: f.id, friend: f.user }
+    end
+    ```
+  </Step>
+  <Step title="Submit Share">
+    Create the sharing record and notify selected friends
+  </Step>
+</Steps>
+
+### Validation
+
+<Warning>
+  You must select at least one friend when creating a share. Empty shares are not allowed.
+</Warning>
+
+From `app/controllers/sharing_controller.rb:38`:
+```ruby
+if params[:sharing].present? && params[:sharing][:shared_with].present?
+  @sharing.shared_with = params[:sharing][:shared_with]
+else
+  redirect_to notes_path, alert: 'Please select a friend to share the note.'
+end
+```
+
+## Notifications
+
+When you share content, automatic notifications are sent to recipients:
+
+<Tabs>
+  <Tab title="Note Shared">
+    ```ruby
+    messageContent = "The user #{current_user.name.capitalize} has shared a note with you"
+    type = "note_request"
+    Notification.create(user: user.id, message: messageContent, notification_type: type)
+    ```
+  </Tab>
+  <Tab title="Collection Shared">
+    ```ruby
+    messageContent = "The user #{current_user.name.capitalize} has shared a collection with you"
+    type = "collection_request"
+    Notification.create(user: user.id, message: messageContent, notification_type: type)
+    ```
+  </Tab>
+</Tabs>
+
+## Updating Shares
+
+### Modifying Friend List
+
+You can update who has access to shared content at `/sharing/:id/edit`:
+
+<Steps>
+  <Step title="View Current Shares">
+    The edit form shows currently shared friends:
+    ```ruby
+    @friendship_shared = @sharing.shared_with
+    ```
+  </Step>
+  <Step title="Add or Remove Friends">
+    Select new friends or deselect existing ones
+  </Step>
+  <Step title="Process Changes">
+    The system calculates and applies the differences:
+    ```ruby app/controllers/sharing_controller.rb:107
+    removed_friend_ids = current_shared_friend_ids - new_friend_ids
+    added_friend_ids = new_friend_ids - current_shared_friend_ids
+    ```
+  </Step>
+</Steps>
+
+### Notification on Update
+
+Friends receive notifications when their access changes:
+
+- **Added friends**: Notified about new shared content
+- **Removed friends**: Notified about removed access
+
+```ruby app/controllers/sharing_controller.rb:111
+removed_friend_ids.each do |id|
+  messageContent = "The user #{current_user.name.capitalize} has deleted a note with you"
+  Notification.create(user: user.id, message: messageContent, notification_type: type)
+end
+```
+
+<Warning>
+  You cannot remove all friends from a share via update. To completely stop sharing, you must delete the sharing record.
+</Warning>
+
+## Deleting Shares
+
+<Steps>
+  <Step title="Delete Sharing Record">
+    Remove the sharing document from the database
+  </Step>
+  <Step title="Notify All Friends">
+    All previously shared friends receive deletion notifications:
+    ```ruby app/controllers/sharing_controller.rb:171
+    @sharing.shared_with.each do |friend_id|
+      user = User.find(friend_id)
+      Notification.create(user: user.id, message: messageContent, notification_type: type)
+    end
+    ```
+  </Step>
+  <Step title="Revoke Access">
+    Friends can no longer access the note or collection
+  </Step>
+</Steps>
+
+## Unsharing (Recipient Action)
+
+Friends who receive shared content can remove themselves from the share:
+
+```ruby app/controllers/sharing_controller.rb:179
+def unsharing
+  @sharing = Sharing.find(params[:id])
+  @sharing.pull(shared_with: current_user.id.to_s)
+  @sharing.save
+end
+```
+
+This action:
+- Removes the friend's ID from the `shared_with` array
+- Does NOT notify the owner
+- Immediately revokes access to the content
+
+<Tip>
+  Use the unsharing feature to decline access to shared content you're no longer interested in.
+</Tip>
+
+## Access Control
+
+### Viewing Shared Content
+
+When accessing a shared note or collection, the system verifies:
+
+```ruby app/controllers/notes_controller.rb:14
+sharing = Sharing.where(shareable_id: @note.id).first
+@friend_sharing = @note.sharings.any? && sharing&.shared_with&.include?(current_user.id.to_s)
+
+unless @note.user_id == current_user.id || sharing&.shared_with&.include?(current_user.id.to_s)
+  redirect_to root_url
+end
+```
+
+Access is granted if:
+- You are the owner, OR
+- Your user ID is in the sharing's `shared_with` array
+
+### Editing Shared Content
+
+Friends with access can edit shared notes and collections:
+
+<Check>
+  Shared access provides full read AND write permissions to the content.
+</Check>
+
+## Friendship Integration
+
+The sharing system is tightly integrated with friendships:
+
+### Cleanup on Friendship Deletion
+
+When a friendship is destroyed, all related sharings are cleaned up:
+
+```ruby app/models/friendship.rb:16
+def cleanup_sharings
+  Sharing.where(:shared_with.in => [self.friend.id.to_s]).each do |sharing|
+    sharing.pull(shared_with: self.friend.id.to_s)
+  end
+  Sharing.where(:shared_with.in => [self.user.id.to_s]).each do |sharing|
+    sharing.pull(shared_with: self.user.id.to_s)
+  end
+end
+```
+
+This ensures:
+- Former friends lose access to your shared content
+- You lose access to content they shared with you
+- No orphaned sharing relationships remain
+
+## Viewing Shared Items
+
+You can see items shared with you in several ways:
+
+### Notes List
+Shared notes appear alongside your own notes at `/notes`
+
+### Collections List
+Shared collections are merged with your collections at `/collections`:
+
+```ruby app/controllers/collections_controller.rb:24
+@collections = (current_user.collections + current_user.shared_collections)
+```
+
+### Friendships Page
+The friendships index shows shared content per friend:
+
+```ruby app/controllers/friendships_controller.rb:22
+notes: current_user.shared_notes_by(f.friend),
+collections: current_user.shared_collections_by(f.friend)
+```
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/sharing/new` | New sharing form |
+| POST | `/sharing` | Create a share |
+| GET | `/sharing/:id/edit` | Edit share form |
+| PATCH | `/sharing/:id` | Update shared friends |
+| DELETE | `/sharing/:id` | Delete share (owner) |
+| POST | `/sharing/:id/unsharing` | Remove yourself from share (recipient) |
+
+## User Model Helpers
+
+The User model provides convenient methods for querying shared content:
+
+<CodeGroup>
+```ruby Shared Notes by Friend
+# Get notes a specific friend shared with you
+current_user.shared_notes_by(friend)
+# Returns Note collection
+```
+
+```ruby Shared Collections by Friend
+# Get collections a specific friend shared with you
+current_user.shared_collections_by(friend)
+# Returns Collection collection
+```
+
+```ruby All Shared Collections
+# Get all collections shared with you
+current_user.shared_collections
+# Returns Collection collection
+```
+</CodeGroup>
+
+From `app/models/user.rb:61-74`:
+```ruby
+def shared_notes_by(friend)
+  note_ids = Sharing.where(owner: friend, shared_with: self.id.to_s, shareable_type: 'Note').pluck(:shareable_id)
+  Note.where(:id.in => note_ids)
+end
+
+def shared_collections_by(friend)
+  collection_ids = Sharing.where(owner: friend, shared_with: self.id.to_s, shareable_type: 'Collection').pluck(:shareable_id)
+  Collection.where(:id.in => collection_ids)
+end
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Share Collections for Teams">
+    When collaborating with multiple friends, share collections instead of individual notes for easier management.
+  </Accordion>
+  <Accordion title="Review Shared Access Regularly">
+    Periodically review who has access to your content and update sharing lists as needed.
+  </Accordion>
+  <Accordion title="Unshare When No Longer Needed">
+    If you're a recipient and no longer need access, use the unsharing feature to keep your workspace clean.
+  </Accordion>
+  <Accordion title="Communicate Before Major Changes">
+    Since shared users can edit content, coordinate with collaborators before making significant changes.
+  </Accordion>
+</AccordionGroup>

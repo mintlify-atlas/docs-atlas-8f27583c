@@ -1,0 +1,192 @@
+---
+title: Introduction
+description: Welcome to Lynx Note - A collaborative note-taking application
+---
+
+## What is Lynx Note?
+
+Lynx Note is a modern, collaborative note-taking web application built with Ruby on Rails. Inspired by Notion, it provides a powerful yet intuitive platform for creating, organizing, and sharing your notes with friends and colleagues.
+
+<Note>
+Lynx Note combines the simplicity of traditional note-taking with advanced features like collections, real-time sharing, and friendship-based collaboration.
+</Note>
+
+## Key Features
+
+Lynx Note offers two distinct experiences depending on your role:
+
+### For Regular Users
+
+<CardGroup cols={2}>
+  <Card title="Rich Note Creation" icon="note-sticky">
+    Create notes with text, lists, and images. Each note can contain multiple content blocks with different types.
+  </Card>
+  
+  <Card title="Collections" icon="folder">
+    Organize your notes into collections for better structure and easier navigation.
+  </Card>
+  
+  <Card title="Friendship System" icon="user-group">
+    Send friend requests, accept or decline invitations, and build your collaboration network.
+  </Card>
+  
+  <Card title="Smart Sharing" icon="share-nodes">
+    Share individual notes or entire collections with your friends. They can view and edit shared content.
+  </Card>
+</CardGroup>
+
+### For Administrators
+
+Administrators have full control over the platform with access to:
+
+- **User Management**: Create, edit, and delete user accounts
+- **Content Moderation**: Manage all notes and collections across the platform
+- **Relationship Management**: Oversee friendships and sharing relationships
+- **Database Control**: Complete CRUD operations on all data models
+
+## Core Concepts
+
+### Notes
+
+Notes are the fundamental building blocks of Lynx Note. Each note can contain:
+
+- A title for quick identification
+- Multiple content blocks that can be:
+  - **Text**: Rich text paragraphs
+  - **Lists**: Semicolon-separated list items
+  - **Images**: Uploaded files stored securely
+
+```ruby
+# Note model structure
+class Note
+  field :title, type: String
+  field :content, type: Array
+  
+  belongs_to :user
+  has_many :sharings, as: :shareable
+end
+```
+
+### Collections
+
+Collections help you organize related notes together. Each collection:
+
+- Has a descriptive name
+- Contains an array of note IDs
+- Can be shared with friends as a complete unit
+- Automatically updates when notes are added or removed
+
+```ruby
+# Collection model structure
+class Collection
+  field :name, type: String
+  field :notes, type: Array, default: []
+  
+  belongs_to :user
+  has_many :sharings, as: :shareable
+end
+```
+
+### Friendships
+
+The friendship system enables collaboration through a request-based workflow:
+
+1. **Send Request**: Initiate a friendship with another user
+2. **Pending Status**: Request awaits acceptance
+3. **Accept/Decline**: Recipient chooses to accept or reject
+4. **Active Friendship**: Once accepted, both users can share content
+
+```ruby
+# Friendship workflow
+class Friendship
+  field :status, type: String, default: "pending"
+  
+  belongs_to :user, inverse_of: :initiated_friendships
+  belongs_to :friend, class_name: 'User'
+end
+```
+
+### Sharing
+
+Sharing is implemented through a polymorphic model that works with both notes and collections:
+
+- Share with multiple friends simultaneously
+- Update sharing permissions at any time
+- Remove access by unsharing
+- Notifications keep everyone informed
+
+<Warning>
+When you share a note or collection, your friends gain the ability to view and edit the content. Make sure you trust the people you share with.
+</Warning>
+
+## Technology Stack
+
+Lynx Note is built with modern, proven technologies:
+
+- **Ruby on Rails 7.1.3**: Robust MVC framework
+- **MongoDB with Mongoid**: Flexible NoSQL database for document storage
+- **BCrypt**: Secure password hashing and authentication
+- **CarrierWave**: File upload handling for images
+- **Turbo & Stimulus**: Modern frontend interactivity
+- **Responsive Design**: Works seamlessly on desktop and mobile devices
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Personal Knowledge Base">
+    Create a comprehensive library of your notes, organized by topics in collections. Share specific collections with collaborators when needed.
+  </Accordion>
+  
+  <Accordion title="Team Collaboration">
+    Build a network of friends (team members) and share project-related notes and collections. Everyone stays in sync with real-time updates.
+  </Accordion>
+  
+  <Accordion title="Study Groups">
+    Students can create study notes, organize them by subject, and share with study partners. Accept friendship requests from classmates to collaborate.
+  </Accordion>
+  
+  <Accordion title="Project Documentation">
+    Document your projects with rich notes containing text, lists, and images. Share entire project collections with stakeholders.
+  </Accordion>
+</AccordionGroup>
+
+## Architecture Overview
+
+Lynx Note follows Rails conventions with a MongoDB backend:
+
+```
+app/
+├── models/
+│   ├── user.rb           # User authentication and relationships
+│   ├── note.rb           # Note content and validation
+│   ├── collection.rb     # Note organization
+│   ├── friendship.rb     # User connections
+│   └── sharing.rb        # Polymorphic sharing model
+├── controllers/
+│   ├── notes_controller.rb
+│   ├── collections_controller.rb
+│   ├── friendships_controller.rb
+│   └── sharing_controller.rb
+└── views/
+    # Responsive views for all resources
+```
+
+## Security Features
+
+- **Password Encryption**: All passwords are hashed using BCrypt before storage
+- **Authentication Required**: Most actions require user login
+- **Authorization Checks**: Users can only access their own content or shared content
+- **Email Validation**: Ensures valid email formats during registration
+- **Secure File Uploads**: Images are stored with unique UUIDs
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Set up Lynx Note on your local machine or server
+  </Card>
+  
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Learn how to create your first note and start collaborating
+  </Card>
+</CardGroup>

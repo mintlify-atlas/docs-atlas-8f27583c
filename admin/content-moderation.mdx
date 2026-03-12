@@ -1,0 +1,382 @@
+---
+title: 'Content Moderation'
+description: 'Managing notes, collections, and user relationships as an administrator'
+---
+
+## Overview
+
+Administrators can view, edit, and moderate all content in the Lynx Note system, including notes, collections, and user friendships. Admin access bypasses normal ownership and sharing restrictions.
+
+## Notes Management
+
+Admins have full control over all notes in the system, regardless of ownership.
+
+### Viewing All Notes
+
+Access the complete notes index:
+
+```ruby
+GET /admin/notes
+```
+
+Displays all notes with browser detection:
+
+```ruby
+@browser = Browser.new(request.user_agent)
+@notes = Note.all
+```
+
+From `app/controllers/admin/notes_controller.rb:7-10`
+
+### Bypassed Restrictions
+
+Admin note operations skip standard authorization checks:
+
+```ruby
+skip_before_action :is_mine, only: [:destroy]
+skip_before_action :is_shared, only: [:show, :edit, :update]
+```
+
+From `app/controllers/admin/notes_controller.rb:3-4`
+
+This allows admins to:
+- View any note, even if not shared with them
+- Edit any note, regardless of owner
+- Delete any note without ownership verification
+
+### Note Operations
+
+**View Note**
+```ruby
+GET /admin/notes/:id
+```
+
+**Edit Note**
+```ruby
+GET /admin/notes/:id/edit
+PUT/PATCH /admin/notes/:id
+```
+
+**Delete Note**
+
+<Warning>
+  Note deletion is permanent. Deleted notes cannot be recovered.
+</Warning>
+
+```ruby
+DELETE /admin/notes/:id
+```
+
+### Success Messages
+
+```ruby
+# After creation
+redirect_to admin_notes_path, notice: 'Note was successfully created.'
+
+# After update
+redirect_to admin_notes_path, notice: 'Note was successfully updated.'
+
+# After deletion
+redirect_to admin_notes_path, notice: 'Note was successfully destroyed.'
+```
+
+From `app/controllers/admin/notes_controller.rb:13-23`
+
+## Collections Management
+
+Admins can manage all note collections across the system.
+
+### Viewing All Collections
+
+Access the collections index with associated notes:
+
+```ruby
+GET /admin/collections
+```
+
+The controller loads collections with their notes:
+
+```ruby
+@collections = Collection.all.map do |collection|
+  notes = []
+  
+  collection.notes.each do |note_id|
+    note = Note.find(note_id)
+    notes << note
+  end
+  collection.assign_attributes(notes: notes)
+  
+  collection
+end
+```
+
+From `app/controllers/admin/collections_controller.rb:8-18`
+
+### Bypassed Restrictions
+
+Admin collection operations skip ownership checks:
+
+```ruby
+skip_before_action :is_mine, only: [:destroy]
+skip_before_action :is_shared, only: [:show, :edit, :update]
+```
+
+From `app/controllers/admin/collections_controller.rb:3-4`
+
+### Collection Operations
+
+**View Collection**
+```ruby
+GET /admin/collections/:id
+```
+
+Displays collection details and contained notes:
+
+```ruby
+@collection = Collection.find(params[:id])
+```
+
+**Edit Collection**
+```ruby
+GET /admin/collections/:id/edit
+PUT/PATCH /admin/collections/:id
+```
+
+**Delete Collection**
+
+<Warning>
+  Deleting a collection removes the collection container but does not delete the notes within it. Notes remain accessible to their owners.
+</Warning>
+
+```ruby
+DELETE /admin/collections/:id
+```
+
+### Success Messages
+
+```ruby
+# After creation
+redirect_to admin_collections_path, notice: 'Collection was successfully created.'
+
+# After update
+redirect_to admin_collections_path, notice: 'Collection was successfully updated.'
+
+# After deletion
+redirect_to admin_collections_path, notice: 'Collection was successfully destroyed.'
+```
+
+From `app/controllers/admin/collections_controller.rb:26-36`
+
+## Friendship Management
+
+Admins can view and moderate user relationships across the platform.
+
+### Viewing All Friendships
+
+Access complete friendship data:
+
+```ruby
+GET /admin/friendships
+```
+
+The controller enriches friendship data with user information:
+
+```ruby
+friendship = Friendship.all
+
+@friendships = friendship.map do |f| 
+  {
+    id: f.id,
+    status: f.status,
+    user: User.find(f.user_id),
+    friend: User.find(f.friend_id)
+  }
+end
+```
+
+From `app/controllers/admin/friendships_controller.rb:6-16`
+
+### Friendship Status
+
+Friendships have a `status` field that tracks the relationship state:
+- `'pending'` - Friend request sent but not accepted
+- `'accepted'` - Active friendship
+
+### Bypassed Restrictions
+
+```ruby
+skip_before_action :not_enter, only: [:show]
+```
+
+From `app/controllers/admin/friendships_controller.rb:3`
+
+### Viewing Friendship Details
+
+Access specific friendship information:
+
+```ruby
+GET /admin/friendships/:id
+```
+
+Displays:
+
+```ruby
+friendship = Friendship.find(params[:id])
+@friendship = {
+  id: friendship.id,
+  status: friendship.status,
+  user: User.find(friendship.user_id),
+  friend: User.find(friendship.friend_id)
+}
+```
+
+From `app/controllers/admin/friendships_controller.rb:20-28`
+
+### Creating Friendships
+
+Admins can create friendships between any two users:
+
+```ruby
+POST /admin/friendships
+```
+
+**Required Parameters:**
+- `friend` - User ID of the friend
+- `friend_one` - User ID of the requesting user
+
+The friendship is created with `'accepted'` status:
+
+```ruby
+@friendship = Friendship.new(
+  user_id: @friend_one, 
+  friend_id: @friend, 
+  status: 'accepted'
+)
+```
+
+From `app/controllers/admin/friendships_controller.rb:59`
+
+### Friendship Validation
+
+The system prevents invalid friendships:
+
+**Self-Friendship Prevention:**
+
+```ruby
+if @friend_one == @friend
+  flash.now[:alert] = "You can't add yourself as a friend."
+  render :new, status: :unprocessable_entity and return
+end
+```
+
+From `app/controllers/admin/friendships_controller.rb:44-48`
+
+**Duplicate Prevention:**
+
+```ruby
+initiated_friendship = @friend_one.initiated_friendships.where(friend_id: @friend.id).first
+received_friendship = @friend.initiated_friendships.where(friend_id: @friend_one.id).first
+
+if initiated_friendship || received_friendship
+  flash.now[:alert] = "Friendship already exists."
+  render :new, status: :unprocessable_entity and return
+end
+```
+
+From `app/controllers/admin/friendships_controller.rb:50-57`
+
+### Deleting Friendships
+
+<Warning>
+  Deleting a friendship removes the connection between users. They will no longer be able to share content through this friendship.
+</Warning>
+
+```ruby
+DELETE /admin/friendships/:id
+```
+
+Use cases for friendship deletion:
+- Resolving disputes between users
+- Enforcing community guidelines
+- Removing connections for banned users
+
+### Success Messages
+
+```ruby
+# After creation
+redirect_to admin_friendships_path, notice: 'Friendship was successfully created.'
+
+# After update
+redirect_to admin_friendships_path, notice: 'Friendship was successfully updated.'
+
+# After deletion
+redirect_to admin_friendships_path, notice: 'Friendship was successfully destroy.'
+```
+
+From `app/controllers/admin/friendships_controller.rb:70-80`
+
+## Content Moderation Workflows
+
+### Investigating User Content
+
+1. Navigate to `/admin/users/:id` to view user profile
+2. Review all notes created by the user
+3. Check collections and their contents
+4. Examine sharing activity
+5. Review friendship connections
+
+### Handling Content Violations
+
+1. Identify problematic content via reports or audits
+2. Navigate to `/admin/notes/:id` or `/admin/collections/:id`
+3. Review content details and ownership
+4. Take appropriate action:
+   - Edit to remove violating content
+   - Delete if severely violating policies
+   - Contact user before taking action (recommended)
+
+### Managing User Relationships
+
+1. Navigate to `/admin/friendships`
+2. Review active friendships
+3. Identify problematic connections
+4. Delete friendships if necessary for community safety
+
+## Moderation Best Practices
+
+<Warning>
+  Always document the reason for content moderation actions. Consider implementing an audit log for administrative actions.
+</Warning>
+
+### Before Deleting Content
+
+- Review the content thoroughly
+- Check if it violates community guidelines
+- Consider contacting the user first
+- Document the violation and action taken
+- Consider less severe actions (editing vs. deletion)
+
+### Transparency
+
+- Inform users when their content is moderated
+- Provide clear reasons for actions taken
+- Offer appeals process when appropriate
+- Maintain consistent enforcement of policies
+
+### Privacy Considerations
+
+- Respect user privacy even with admin access
+- Only access content when necessary for moderation
+- Don't share user content externally
+- Follow data protection regulations
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Admin Overview" icon="gauge" href="/admin/overview">
+    Learn about admin capabilities and dashboard access
+  </Card>
+  <Card title="User Management" icon="users" href="/admin/user-management">
+    Manage user accounts, roles, and permissions
+  </Card>
+</CardGroup>

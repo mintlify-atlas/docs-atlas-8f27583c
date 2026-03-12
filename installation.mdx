@@ -1,0 +1,370 @@
+---
+title: Installation
+description: Set up Lynx Note on your local development environment
+---
+
+## Prerequisites
+
+Before installing Lynx Note, ensure you have the following dependencies installed on your system:
+
+### Required Software
+
+<CardGroup cols={2}>
+  <Card title="Ruby" icon="gem">
+    Version 3.0.2 (exact version required)
+  </Card>
+  
+  <Card title="Rails" icon="train">
+    Version ~> 7.1.3 or higher
+  </Card>
+  
+  <Card title="MongoDB" icon="database">
+    For data storage (runs on localhost:27017)
+  </Card>
+  
+  <Card title="Node.js" icon="node-js">
+    Version 16.x or higher (recommended)
+  </Card>
+</CardGroup>
+
+### System Dependencies
+
+Install the following development libraries:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libssl-dev libreadline-dev zlib1g-dev libsqlite3-dev
+```
+
+### Ruby Gems
+
+Lynx Note uses these key Ruby gems (automatically installed via Bundler):
+
+- **mongoid** (~> 8.1, >= 8.1.5) - MongoDB ODM
+- **carrierwave** (~> 2.2, >= 2.2.6) - File uploads
+- **carrierwave-mongoid** (~> 1.4) - CarrierWave integration
+- **bcrypt** (~> 3.1.7) - Password encryption
+- **browser** - User agent detection
+- **puma** (>= 5.0) - Web server
+
+## Installation Steps
+
+<Steps>
+  <Step title="Install Ruby 3.0.2">
+    Use a version manager like rbenv or RVM to install the required Ruby version:
+    
+    ```bash rbenv
+    rbenv install 3.0.2
+    rbenv local 3.0.2
+    ```
+    
+    ```bash rvm
+    rvm install 3.0.2
+    rvm use 3.0.2
+    ```
+    
+    Verify the installation:
+    
+    ```bash
+    ruby -v
+    # Should output: ruby 3.0.2
+    ```
+  </Step>
+  
+  <Step title="Install MongoDB">
+    Install MongoDB Community Edition for your operating system:
+    
+    ```bash Ubuntu/Debian
+    wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+    sudo apt-get update
+    sudo apt-get install -y mongodb-org
+    ```
+    
+    Start the MongoDB service:
+    
+    ```bash
+    sudo systemctl start mongod
+    sudo systemctl enable mongod
+    ```
+    
+    Verify MongoDB is running:
+    
+    ```bash
+    sudo systemctl status mongod
+    ```
+  </Step>
+  
+  <Step title="Clone the Repository">
+    Clone the Lynx Note source code:
+    
+    ```bash
+    git clone <repository-url>
+    cd lynx-note
+    ```
+  </Step>
+  
+  <Step title="Install Bundler">
+    Install the Bundler gem manager:
+    
+    ```bash
+    gem install bundler
+    ```
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Install all required gems:
+    
+    ```bash
+    bundle install
+    ```
+    
+    This will install all dependencies specified in the Gemfile, including:
+    - Rails 7.1.3
+    - Mongoid ODM
+    - CarrierWave for file uploads
+    - BCrypt for authentication
+    - And all other required gems
+  </Step>
+  
+  <Step title="Install Node.js and Yarn">
+    Install Node.js (version 16.x recommended):
+    
+    ```bash
+    curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    ```
+    
+    Install Yarn package manager:
+    
+    ```bash
+    npm install -g yarn
+    ```
+  </Step>
+  
+  <Step title="Configure MongoDB">
+    The default MongoDB configuration connects to `localhost:27017`. Review the configuration file:
+    
+    ```yaml config/mongoid.yml
+    development:
+      clients:
+        default:
+          database: laboratorio_development
+          hosts:
+            - localhost:27017
+    
+    test:
+      clients:
+        default:
+          database: laboratorio_test
+          hosts:
+            - localhost:27017
+    ```
+    
+    <Note>
+    If your MongoDB runs on a different host or port, update the `hosts` section in `config/mongoid.yml`.
+    </Note>
+  </Step>
+  
+  <Step title="Create Upload Directory">
+    Create the directory for file uploads:
+    
+    ```bash
+    mkdir -p public/uploads
+    chmod 755 public/uploads
+    ```
+  </Step>
+  
+  <Step title="Verify Installation">
+    Check that all components are properly installed:
+    
+    ```bash
+    ruby -v        # Should show 3.0.2
+    rails -v       # Should show 7.1.3 or higher
+    node -v        # Should show v16.x or higher
+    mongod --version  # Should show MongoDB version
+    ```
+  </Step>
+</Steps>
+
+## Configuration
+
+### Database Configuration
+
+Lynx Note uses MongoDB as its primary database. The configuration is managed through Mongoid:
+
+```ruby config/application.rb
+# MongoDB is configured via config/mongoid.yml
+# No additional ActiveRecord configuration needed
+```
+
+<Warning>
+Lynx Note includes SQLite in the Gemfile for Rails compatibility, but all actual data is stored in MongoDB via Mongoid. Do not use ActiveRecord models.
+</Warning>
+
+### Environment Variables
+
+For production deployments, consider setting these environment variables:
+
+```bash .env
+RAILS_ENV=production
+RAILS_MAX_THREADS=5
+MONGODB_URI=mongodb://username:password@host:27017/database_name
+```
+
+### File Upload Configuration
+
+CarrierWave is configured to store files in `public/uploads/`:
+
+```ruby
+# Files are saved with unique UUIDs
+# Example path: public/uploads/abc123-def456.jpg
+```
+
+## Running the Application
+
+Start the Rails development server:
+
+```bash
+rails server
+```
+
+The application will be available at:
+
+```
+http://localhost:3000
+```
+
+<Note>
+By default, Puma serves the application on port 3000. You can change this with the `-p` flag:
+
+```bash
+rails server -p 4000
+```
+</Note>
+
+## Using WSL (Windows Subsystem for Linux)
+
+The original developers used WSL for development. To set up on Windows:
+
+<Steps>
+  <Step title="Enable WSL">
+    Open PowerShell as Administrator:
+    
+    ```powershell
+    wsl --install
+    ```
+  </Step>
+  
+  <Step title="Install Ubuntu">
+    Install Ubuntu from the Microsoft Store, then follow the Linux installation steps above.
+  </Step>
+  
+  <Step title="Access Files">
+    Your WSL files are accessible at:
+    
+    ```
+    \\wsl$\Ubuntu\home\<username>\lynx-note
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="MongoDB Connection Error">
+    If you see connection errors, ensure MongoDB is running:
+    
+    ```bash
+    sudo systemctl status mongod
+    ```
+    
+    If it's not running, start it:
+    
+    ```bash
+    sudo systemctl start mongod
+    ```
+    
+    Check that the database name and host in `config/mongoid.yml` match your MongoDB setup.
+  </Accordion>
+  
+  <Accordion title="Ruby Version Mismatch">
+    If you see "Ruby version 3.0.2 is required", ensure you're using the correct version:
+    
+    ```bash
+    ruby -v
+    ```
+    
+    Switch to the correct version using your version manager:
+    
+    ```bash
+    rbenv local 3.0.2  # for rbenv
+    rvm use 3.0.2      # for rvm
+    ```
+  </Accordion>
+  
+  <Accordion title="Bundle Install Fails">
+    If bundle install fails, try:
+    
+    ```bash
+    gem update --system
+    gem install bundler
+    bundle install
+    ```
+    
+    Ensure all system dependencies are installed:
+    
+    ```bash
+    sudo apt-get install -y libssl-dev libreadline-dev zlib1g-dev
+    ```
+  </Accordion>
+  
+  <Accordion title="File Upload Errors">
+    Ensure the uploads directory exists and has proper permissions:
+    
+    ```bash
+    mkdir -p public/uploads
+    chmod 755 public/uploads
+    ```
+  </Accordion>
+  
+  <Accordion title="Port Already in Use">
+    If port 3000 is already in use:
+    
+    ```bash
+    # Find and kill the process
+    lsof -ti:3000 | xargs kill -9
+    
+    # Or use a different port
+    rails server -p 4000
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Verify Installation
+
+To verify everything is working:
+
+<Steps>
+  <Step title="Start the Server">
+    ```bash
+    rails server
+    ```
+  </Step>
+  
+  <Step title="Access the Application">
+    Open your browser and navigate to `http://localhost:3000`
+  </Step>
+  
+  <Step title="Check the Home Page">
+    You should see the Lynx Note home page with login and signup options
+  </Step>
+</Steps>
+
+## Next Steps
+
+Now that you have Lynx Note installed, proceed to the Quick Start guide to create your first note:
+
+<Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+  Learn how to register, create notes, and start collaborating
+</Card>

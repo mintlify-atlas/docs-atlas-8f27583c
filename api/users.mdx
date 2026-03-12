@@ -1,0 +1,272 @@
+---
+title: 'Users API'
+description: 'User management endpoints for registration, authentication, and profile operations'
+---
+
+## Authentication
+
+Most user endpoints require session authentication. The session is managed via cookies after logging in through the Session API.
+
+## List Users
+
+<Warning>This endpoint redirects to the root URL and is not accessible via API.</Warning>
+
+```http
+GET /users
+```
+
+Redirects to the application root.
+
+---
+
+## Get Current User
+
+Retrieve the authenticated user's profile information.
+
+```http
+GET /users/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Response
+
+<ResponseField name="user" type="object">
+  <ResponseField name="id" type="string">
+    Unique user identifier
+  </ResponseField>
+  <ResponseField name="name" type="string">
+    User's display name
+  </ResponseField>
+  <ResponseField name="email" type="string">
+    User's email address
+  </ResponseField>
+  <ResponseField name="role" type="string">
+    User role (e.g., "user", "admin")
+  </ResponseField>
+  <ResponseField name="created_at" type="timestamp">
+    Account creation timestamp
+  </ResponseField>
+  <ResponseField name="updated_at" type="timestamp">
+    Last update timestamp
+  </ResponseField>
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET https://lynxnote.com/users/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Create User (Signup)
+
+Register a new user account.
+
+```http
+POST /users
+```
+
+### Parameters
+
+<ParamField body="user[name]" type="string" required>
+  User's display name
+</ParamField>
+
+<ParamField body="user[email]" type="string" required>
+  Valid email address (must be unique)
+</ParamField>
+
+<ParamField body="user[password]" type="string" required>
+  User's password (will be hashed using BCrypt)
+</ParamField>
+
+### Response
+
+On success, redirects to root URL with success notice. The user role is automatically set to "user".
+
+<ResponseField name="message" type="string">
+  "Registered, you can now log in"
+</ResponseField>
+
+### Validation Errors
+
+- **422 Unprocessable Entity**: Email already exists, invalid email format, or missing required fields
+
+### Example Request
+
+```bash
+curl -X POST https://lynxnote.com/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user": {
+      "name": "John Doe",
+      "email": "john@example.com",
+      "password": "securepassword123"
+    }
+  }'
+```
+
+---
+
+## Update User
+
+Update the authenticated user's profile information.
+
+```http
+PATCH /users/:id
+PUT /users/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField body="user[name]" type="string">
+  Updated display name
+</ParamField>
+
+<ParamField body="user[email]" type="string">
+  Updated email address (must be unique)
+</ParamField>
+
+<ParamField body="user[password]" type="string">
+  New password (leave blank to keep current password)
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  "User was successfully updated."
+</ResponseField>
+
+### Validation Errors
+
+- **422 Unprocessable Entity**: Email already exists or invalid data
+
+### Example Request
+
+```bash
+curl -X PATCH https://lynxnote.com/users/123 \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user": {
+      "name": "Jane Doe",
+      "email": "jane@example.com"
+    }
+  }'
+```
+
+---
+
+## Delete User
+
+Delete the authenticated user's account permanently.
+
+```http
+DELETE /users/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Response
+
+**204 No Content**: User successfully deleted. Session is automatically terminated.
+
+### Side Effects
+
+- All user's notes are deleted
+- All user's collections are deleted
+- All friendships are removed
+- All notifications are deleted
+- Session is destroyed
+
+### Example Request
+
+```bash
+curl -X DELETE https://lynxnote.com/users/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Session Management
+
+### Login
+
+Create a new user session.
+
+```http
+POST /login
+```
+
+#### Parameters
+
+<ParamField body="email" type="string" required>
+  User's email address
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password
+</ParamField>
+
+#### Response
+
+On success, sets session cookie and redirects to root URL.
+
+<ResponseField name="message" type="string">
+  "Welcome back! [Username]"
+</ResponseField>
+
+#### Validation Errors
+
+- **422 Unprocessable Entity**: Invalid credentials or missing fields
+
+#### Example Request
+
+```bash
+curl -X POST https://lynxnote.com/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "securepassword123"
+  }'
+```
+
+### Logout
+
+Destroy the current user session.
+
+```http
+GET /logout
+```
+
+#### Response
+
+Destroys session and redirects to root URL.
+
+<ResponseField name="message" type="string">
+  "See you soon!"
+</ResponseField>
+
+#### Example Request
+
+```bash
+curl -X GET https://lynxnote.com/logout \
+  -H "Cookie: _session_id=your_session_cookie"
+```

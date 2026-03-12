@@ -1,0 +1,272 @@
+---
+title: 'Collections API'
+description: 'Organize notes into collections with CRUD operations'
+---
+
+## Authentication
+
+All collections endpoints require session authentication. Users can only access collections they own or collections that have been shared with them.
+
+## List Collections
+
+Retrieve all collections belonging to the authenticated user, including shared collections.
+
+```http
+GET /collections
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Response
+
+<ResponseField name="collections" type="array">
+  Array of collection objects, sorted by number of notes (descending)
+  <ResponseField name="id" type="string">
+    Unique collection identifier
+  </ResponseField>
+  <ResponseField name="name" type="string">
+    Collection name
+  </ResponseField>
+  <ResponseField name="notes" type="array">
+    Array of note objects belonging to the current user in this collection
+  </ResponseField>
+  <ResponseField name="user_id" type="string">
+    ID of the user who created the collection
+  </ResponseField>
+  <ResponseField name="sharing" type="object">
+    <ResponseField name="shared" type="boolean">
+      Whether the collection is currently shared
+    </ResponseField>
+    <ResponseField name="id" type="string">
+      ID of the sharing record if shared
+    </ResponseField>
+    <ResponseField name="is_shared" type="boolean">
+      Whether this collection was shared with the current user (vs. owned)
+    </ResponseField>
+  </ResponseField>
+  <ResponseField name="created_at" type="timestamp">
+    Collection creation timestamp
+  </ResponseField>
+  <ResponseField name="updated_at" type="timestamp">
+    Last update timestamp
+  </ResponseField>
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET https://lynxnote.com/collections \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Get Collection
+
+Retrieve a specific collection by ID. Only accessible if the collection has been shared with you.
+
+```http
+GET /collections/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Collection ID
+</ParamField>
+
+### Response
+
+<ResponseField name="collection" type="object">
+  <ResponseField name="id" type="string">
+    Unique collection identifier
+  </ResponseField>
+  <ResponseField name="name" type="string">
+    Collection name
+  </ResponseField>
+  <ResponseField name="notes" type="array">
+    Array of all note objects in this collection
+  </ResponseField>
+  <ResponseField name="user_id" type="string">
+    ID of the user who created the collection
+  </ResponseField>
+  <ResponseField name="created_at" type="timestamp">
+    Collection creation timestamp
+  </ResponseField>
+  <ResponseField name="updated_at" type="timestamp">
+    Last update timestamp
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="shared_id" type="string">
+  ID of the sharing record
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET https://lynxnote.com/collections/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Create Collection
+
+Create a new collection to organize notes.
+
+```http
+POST /collections
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField body="collection[name]" type="string" required>
+  Collection name
+</ParamField>
+
+### Response
+
+On success, redirects to collections list.
+
+<ResponseField name="message" type="string">
+  "Collection was successfully created."
+</ResponseField>
+
+### Validation
+
+- Name is required
+- **422 Unprocessable Entity**: Missing name field
+
+### Example Request
+
+```bash
+curl -X POST https://lynxnote.com/collections \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collection": {
+      "name": "Work Notes"
+    }
+  }'
+```
+
+---
+
+## Update Collection
+
+Update an existing collection's name or note associations.
+
+```http
+PATCH /collections/:id
+PUT /collections/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Collection ID
+</ParamField>
+
+<ParamField body="collection[name]" type="string">
+  Updated collection name
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  "Collection was successfully updated."
+</ResponseField>
+
+### Validation
+
+- **422 Unprocessable Entity**: Invalid data
+
+### Example Request
+
+```bash
+curl -X PATCH https://lynxnote.com/collections/123 \
+  -H "Cookie: _session_id=your_session_cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collection": {
+      "name": "Personal Notes"
+    }
+  }'
+```
+
+---
+
+## Delete Collection
+
+Permanently delete a collection. Only the collection owner can delete collections.
+
+```http
+DELETE /collections/:id
+```
+
+### Authentication
+
+<ParamField header="Cookie" type="string" required>
+  Session cookie containing `user_id`
+</ParamField>
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Collection ID
+</ParamField>
+
+### Response
+
+Redirects to collections list with success message.
+
+<ResponseField name="message" type="string">
+  "Collection was successfully destroyed."
+</ResponseField>
+
+### Side Effects
+
+- All sharing records for this collection are deleted
+- Notes in the collection are not deleted, only the collection-note associations
+
+### Example Request
+
+```bash
+curl -X DELETE https://lynxnote.com/collections/123 \
+  -H "Cookie: _session_id=your_session_cookie"
+```
+
+---
+
+## Collection Management
+
+Collections are containers that organize notes. Key features:
+
+- **Ownership**: Each collection belongs to one user
+- **Sharing**: Collections can be shared with friends, who can view all notes in the collection
+- **Note Associations**: The `notes` field stores an array of note IDs
+- **Shared Collections**: When listing collections, you'll see both collections you own and collections shared with you
+- **Access Control**: Shared collection viewers can see the collection and its notes, but only owners can modify or delete

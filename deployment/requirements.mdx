@@ -1,0 +1,168 @@
+---
+title: System Requirements
+description: Prerequisites and dependencies for deploying Lynx Note
+---
+
+## Overview
+
+Lynx Note is a Ruby on Rails 7.1 application that uses MongoDB as its database. Before deploying, ensure your system meets the following requirements.
+
+## Core Requirements
+
+### Ruby
+
+- **Version**: Ruby 3.0.2 (exact version required)
+- **Installation**: Use rbenv, rvm, or your system's package manager
+
+```bash
+# Using rbenv
+rbenv install 3.0.2
+rbenv local 3.0.2
+
+# Verify installation
+ruby -v
+# Expected: ruby 3.0.2
+```
+
+### Rails Framework
+
+- **Version**: Rails 7.1.3 or higher (>= 7.1.3.2)
+- **Installed via**: Bundler (see Gemfile)
+
+### Node.js & JavaScript Runtime
+
+- **Node.js**: Version 16.x or higher (recommended)
+- **Yarn**: Latest stable version
+- **Purpose**: Asset compilation and JavaScript dependencies
+
+```bash
+# Check Node.js version
+node -v
+# Expected: v16.x or higher
+
+# Check Yarn version
+yarn -v
+```
+
+## Database Requirements
+
+### MongoDB
+
+- **Database**: MongoDB 4.0 or higher recommended
+- **Connection**: Default port 27017
+- **Databases**: 
+  - `laboratorio_development` (development)
+  - `laboratorio_test` (test)
+  - `laboratorio_production` (production)
+
+```bash
+# Verify MongoDB is running
+mongosh --eval "db.version()"
+```
+
+## System Dependencies
+
+### Build Tools (Ubuntu/Debian)
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential \
+  git \
+  libssl-dev \
+  libreadline-dev \
+  zlib1g-dev \
+  libsqlite3-dev \
+  libvips \
+  pkg-config
+```
+
+### Required Gems
+
+The following gems are required (installed via Bundler):
+
+<CodeGroup>
+
+```ruby Gemfile
+ruby "3.0.2"
+
+gem "rails", "~> 7.1.3", ">= 7.1.3.2"
+gem "mongoid", "~> 8.1", ">= 8.1.5"
+gem "carrierwave", "~> 2.2", ">= 2.2.6"
+gem "carrierwave-mongoid", "~> 1.4"
+gem "bcrypt", "~> 3.1.7"
+gem "puma", ">= 5.0"
+gem "bootsnap", require: false
+```
+
+</CodeGroup>
+
+### Key Dependencies
+
+| Gem | Version | Purpose |
+|-----|---------|----------|
+| mongoid | ~> 8.1.5 | MongoDB ODM (Object-Document Mapper) |
+| carrierwave | ~> 2.2.6 | File upload handling for note images |
+| carrierwave-mongoid | ~> 1.4 | MongoDB integration for CarrierWave |
+| bcrypt | ~> 3.1.7 | Password hashing for user authentication |
+| browser | latest | Browser detection |
+| puma | >= 5.0 | Web server |
+
+## Web Server
+
+### Puma (Included)
+
+- **Default web server**: Puma 5.0 or higher
+- **Port**: 3000 (configurable via PORT environment variable)
+- **Threads**: 5 (min/max, configurable via RAILS_MAX_THREADS)
+- **Workers**: Auto-configured based on CPU cores in production
+
+## Optional Components
+
+### SSL/TLS Support
+
+- Production deployment forces SSL by default
+- Requires reverse proxy (Nginx/Apache) for SSL termination
+
+### Docker (Alternative Deployment)
+
+If deploying with Docker, system dependencies are handled automatically. See [Docker Deployment](/deployment/docker) for details.
+
+## Environment-Specific Requirements
+
+### Development
+
+- All core requirements
+- SQLite3 (~> 1.4) for Active Record compatibility
+- Web Console gem for debugging
+
+### Production
+
+- All core requirements
+- Environment variables for configuration
+- MongoDB with persistent storage
+- Reverse proxy for SSL/TLS termination (recommended)
+
+### Testing
+
+- All core requirements
+- Separate MongoDB test database
+
+## Verification Checklist
+
+Before proceeding with deployment, verify:
+
+- [ ] Ruby 3.0.2 installed and active
+- [ ] Bundler installed (`gem install bundler`)
+- [ ] Node.js 16.x or higher installed
+- [ ] Yarn package manager installed
+- [ ] MongoDB 4.0+ running and accessible
+- [ ] System build tools installed
+- [ ] Port 3000 available (or alternative configured)
+
+## Next Steps
+
+Once all requirements are met, proceed to:
+
+- [Docker Deployment](/deployment/docker) - For containerized deployment
+- [Configuration](/deployment/configuration) - For environment setup and MongoDB connection

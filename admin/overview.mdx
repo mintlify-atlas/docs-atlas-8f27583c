@@ -1,0 +1,128 @@
+---
+title: 'Admin Dashboard Overview'
+description: 'Comprehensive admin capabilities and dashboard access in Lynx Note'
+---
+
+## Overview
+
+Lynx Note provides administrators with powerful tools to manage users, content, and relationships across the platform. The admin dashboard gives you full oversight and control over all system resources.
+
+## Admin Access
+
+Administrators are identified by the `role` field set to `'admin'` in the User model. All admin routes require authentication and admin role verification.
+
+### Authentication Requirements
+
+The admin system uses a two-layer authentication:
+
+1. **User Authentication** - Must be logged in with an active session
+2. **Admin Role Check** - User's role must be `'admin'`
+
+Implemented via `validate_admin` before action in `app/controllers/application_controller.rb:29-31`:
+
+```ruby
+def validate_admin
+  return redirect_to root_path unless user_aunthenticated? && user_admin?
+end
+```
+
+## Admin Routes
+
+All admin routes are namespaced under `/admin` and provide full CRUD operations:
+
+```ruby
+namespace :admin do
+  resources :notes
+  resources :users
+  resources :collections
+  resources :friendships
+end
+```
+
+### Available Routes
+
+| Resource | Routes | Description |
+|----------|--------|-------------|
+| **Notes** | `/admin/notes` | Manage all notes in the system |
+| **Users** | `/admin/users` | Manage user accounts and roles |
+| **Collections** | `/admin/collections` | Manage note collections |
+| **Friendships** | `/admin/friendships` | Manage user relationships |
+| **Dashboard** | `/admin` | Main admin dashboard |
+
+## Admin Capabilities
+
+### Bypass Ownership Checks
+
+Admins can bypass standard ownership and sharing restrictions:
+
+- **Notes**: Skip `is_mine` and `is_shared` checks (app/controllers/admin/notes_controller.rb:3-4)
+- **Collections**: Skip `is_mine` and `is_shared` checks (app/controllers/admin/collections_controller.rb:3-4)
+- **Friendships**: Skip `not_enter` restriction (app/controllers/admin/friendships_controller.rb:3)
+
+### Full System Visibility
+
+Admins have read access to all resources:
+
+```ruby
+# View all notes
+@notes = Note.all
+
+# View all users
+@users = User.all
+
+# View all collections
+@collections = Collection.all
+
+# View all friendships
+@friendships = Friendship.all
+```
+
+## Admin Workflows
+
+### User Management
+- Create users with custom roles (including admin)
+- View and edit any user profile
+- Delete user accounts (cascades to notes, collections, friendships)
+- Monitor user activity and content
+
+### Content Management
+- View, edit, and delete any note
+- Manage collections across all users
+- Monitor content creation and sharing
+
+### Relationship Management
+- View all friendship connections
+- Create friendships between any users
+- Delete friendships to moderate connections
+- View friendship status (pending/accepted)
+
+## Security Considerations
+
+<Warning>
+  Admin actions bypass normal authorization checks. Always verify the operation before executing destructive actions like user deletion or content removal.
+</Warning>
+
+### Role Assignment
+
+Only admins can create users with the `'admin'` role. Regular user registration automatically assigns the `'user'` role.
+
+From `app/controllers/admin/users_controller.rb:15-18`:
+
+```ruby
+if params[:user][:role].blank?
+  @user = User.new(user_params.merge(role: 'user'))
+else
+  @user = User.new(user_params)
+end
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="User Management" icon="users" href="/admin/user-management">
+    Learn how to manage user accounts, roles, and permissions
+  </Card>
+  <Card title="Content Moderation" icon="shield" href="/admin/content-moderation">
+    Manage notes, collections, and user relationships
+  </Card>
+</CardGroup>

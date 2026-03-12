@@ -1,0 +1,215 @@
+---
+title: 'Notes'
+description: 'Create, edit, and manage notes with rich content including text, lists, and images'
+icon: 'note-sticky'
+---
+
+## Overview
+
+Notes are the core building blocks of Lynx Note. Each note can contain a title and multiple content blocks of different types, providing flexibility in how you organize and present information.
+
+## Note Structure
+
+### Data Model
+
+Notes use MongoDB through Mongoid and have the following structure:
+
+```ruby app/models/note.rb
+class Note
+  include Mongoid::Document
+  include Mongoid::Timestamps
+
+  field :title, type: String
+  field :content, type: Array
+  has_many :sharings, as: :shareable, dependent: :destroy
+
+  belongs_to :user
+end
+```
+
+### Content Types
+
+The `content` field is an array that can contain three types of content blocks:
+
+<CardGroup cols={3}>
+  <Card title="Text" icon="font">
+    Plain text content blocks for paragraphs and general information
+  </Card>
+  <Card title="Lists" icon="list">
+    Semicolon-separated list items for organized bullet points
+  </Card>
+  <Card title="Images" icon="image">
+    File uploads stored in `/public/uploads/` with UUID filenames
+  </Card>
+</CardGroup>
+
+### Content Format
+
+Each content item is stored as a JSON string with the following structure:
+
+```json
+{
+  "type": "text|list|file",
+  "value": "content value"
+}
+```
+
+<Note>
+  List items are stored as semicolon-separated values (e.g., `"item1;item2;item3"`) and blank items are automatically filtered out during save.
+</Note>
+
+## Creating Notes
+
+<Steps>
+  <Step title="Navigate to New Note">
+    Access the note creation form at `/notes/new`
+  </Step>
+  <Step title="Add Title (Optional)">
+    Provide a title for your note. If no title is provided, you must include at least one content block.
+  </Step>
+  <Step title="Add Content Blocks">
+    Add one or more content blocks:
+    - **Text**: Enter plain text
+    - **List**: Add list items (blank items are removed automatically)
+    - **Image**: Upload an image file
+  </Step>
+  <Step title="Organize into Collections">
+    Optionally select one or more collections to add the note to
+  </Step>
+  <Step title="Save Note">
+    Submit the form to create your note
+  </Step>
+</Steps>
+
+### Validation Rules
+
+Notes must satisfy the following validation from `app/models/note.rb:14`:
+
+<Warning>
+  A note must have either a title OR at least one non-empty content block. Empty notes are not allowed.
+</Warning>
+
+### Image Handling
+
+When you upload an image (from `app/controllers/notes_controller.rb:224`):
+
+1. A UUID filename is generated: `SecureRandom.uuid + File.extname(uploaded_file.original_filename)`
+2. File is saved to `public/uploads/`
+3. The path `/uploads/{filename}` is stored in the content
+
+## Editing Notes
+
+### Access Control
+
+You can edit a note if you are:
+- The note owner (from `app/controllers/notes_controller.rb:8`)
+- A friend with whom the note has been shared (from `app/controllers/notes_controller.rb:18`)
+
+### Update Operations
+
+When editing, you can:
+- Modify the title
+- Update existing content blocks
+- Add new content blocks
+- Delete content blocks
+- Update which collections contain the note
+
+<Info>
+  When deleting images from notes, the files are automatically removed from the filesystem to prevent storage bloat.
+</Info>
+
+### Image Management
+
+The update process supports:
+- **Replacing images**: Upload a new file at a specific index
+- **Deleting images**: Mark images for deletion via `images_to_delete` parameter
+- **Preserving images**: Existing images remain unchanged unless explicitly modified
+
+## Deleting Notes
+
+<Steps>
+  <Step title="Verify Ownership">
+    Only the note owner can delete a note (enforced at `app/controllers/notes_controller.rb:6`)
+  </Step>
+  <Step title="Cleanup Collections">
+    The note is automatically removed from all collections via `CollectionsNotesService`
+  </Step>
+  <Step title="Delete Images">
+    All uploaded images associated with the note are deleted from the filesystem
+  </Step>
+  <Step title="Remove Sharings">
+    All sharing relationships are destroyed (cascade delete from model)
+  </Step>
+  <Step title="Delete Note Record">
+    The note document is removed from MongoDB
+  </Step>
+</Steps>
+
+## Viewing Notes
+
+### List View
+
+Access your notes at `/notes` to see:
+- All notes you own
+- Optimized for both desktop and mobile browsers
+
+### Detail View
+
+View individual notes at `/notes/:id`:
+
+```ruby
+# Returns note data with sharing information
+{
+  note: @note,
+  shared: @shared,      # Boolean: is this note shared?
+  shared_id: @shared_id # Sharing record ID if applicable
+}
+```
+
+### Permissions
+
+Note visibility follows these rules:
+- **Owner**: Full read/write access
+- **Shared friend**: Read and edit access (from `app/controllers/notes_controller.rb:16`)
+- **Others**: No access (redirected to root)
+
+## Collections Integration
+
+Notes can belong to multiple collections simultaneously. The `CollectionsNotesService` manages these relationships:
+
+```ruby app/services/collections_notes_service.rb
+# Add note to collections
+service.add_collections(collection_ids)
+
+# Update collection memberships
+service.update_collections(collection_ids)
+
+# Remove from all collections
+service.delete_collections
+```
+
+<Tip>
+  Collections store an array of note IDs, creating a many-to-many relationship without a join table.
+</Tip>
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/notes` | List all your notes |
+| GET | `/notes/:id` | View a specific note |
+| GET | `/notes/new` | New note form |
+| POST | `/notes` | Create a note |
+| GET | `/notes/:id/edit` | Edit note form |
+| PATCH | `/notes/:id` | Update a note |
+| DELETE | `/notes/:id` | Delete a note |
+
+## Mobile Support
+
+Lynx Note provides optimized experiences for mobile browsers:
+
+```ruby app/controllers/notes_controller.rb:24
+@browser = Browser.new(request.user_agent)
+```
+
+Redirect logic differs based on device type to provide the best user experience on both desktop and mobile platforms.

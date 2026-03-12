@@ -1,0 +1,500 @@
+---
+title: Configuration
+description: Environment setup and configuration options for Lynx Note
+---
+
+## Overview
+
+Lynx Note configuration is managed through environment variables, configuration files, and the Mongoid ODM. This guide covers all configuration options for development, test, and production environments.
+
+## MongoDB Configuration
+
+### Connection Settings
+
+Mongoid configuration is defined in `config/mongoid.yml`. The application uses different databases for each environment:
+
+<CodeGroup>
+
+```yaml Development
+development:
+  clients:
+    default:
+      database: laboratorio_development
+      hosts:
+        - localhost:27017
+      options:
+        # Connection pool settings
+        max_pool_size: 5
+        min_pool_size: 1
+        wait_queue_timeout: 5
+        connect_timeout: 10
+```
+
+```yaml Test
+test:
+  clients:
+    default:
+      database: laboratorio_test
+      hosts:
+        - localhost:27017
+      options:
+        read:
+          mode: :primary
+        max_pool_size: 1
+```
+
+```yaml Production (Environment Variable)
+# Set via MONGODB_URI environment variable
+export MONGODB_URI=mongodb://user:password@host:27017/laboratorio_production
+
+# Or configure in mongoid.yml:
+production:
+  clients:
+    default:
+      uri: <%= ENV['MONGODB_URI'] %>
+```
+
+</CodeGroup>
+
+### MongoDB Authentication
+
+For production deployments with authentication:
+
+```yaml
+production:
+  clients:
+    default:
+      hosts:
+        - mongodb.example.com:27017
+      options:
+        user: 'lynx_user'
+        password: 'secure_password'
+        auth_source: admin
+        auth_mech: :scram
+```
+
+### Connection Options
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `max_pool_size` | Maximum connections in pool | 5 |
+| `min_pool_size` | Minimum connections in pool | 1 |
+| `wait_queue_timeout` | Wait time for connection (seconds) | 5 |
+| `connect_timeout` | Connection timeout (seconds) | 10 |
+| `socket_timeout` | Operation timeout (seconds) | nil (no timeout) |
+
+### SSL/TLS Connections
+
+For secure MongoDB connections:
+
+```yaml
+options:
+  ssl: true
+  ssl_verify: true
+  ssl_cert: /path/to/client.cert
+  ssl_key: /path/to/client.key
+  ssl_ca_cert: /path/to/ca.cert
+```
+
+## Environment Variables
+
+### Required for Production
+
+<Steps>
+
+<Step title="SECRET_KEY_BASE">
+
+Rails encryption key for sessions and credentials.
+
+```bash
+# Generate a new secret
+rails secret
+
+# Set environment variable
+export SECRET_KEY_BASE="your_generated_secret_here"
+```
+
+</Step>
+
+<Step title="MONGODB_URI">
+
+MongoDB connection string.
+
+```bash
+# Local MongoDB
+export MONGODB_URI="mongodb://localhost:27017/laboratorio_production"
+
+# Remote MongoDB with authentication
+export MONGODB_URI="mongodb://user:pass@host:27017/laboratorio_production"
+
+# MongoDB Atlas
+export MONGODB_URI="mongodb+srv://user:pass@cluster.mongodb.net/laboratorio_production"
+```
+
+</Step>
+
+<Step title="RAILS_ENV">
+
+Rails environment mode.
+
+```bash
+export RAILS_ENV=production
+```
+
+</Step>
+
+</Steps>
+
+### Optional Configuration
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `PORT` | Web server port | `3000` |
+| `RAILS_LOG_LEVEL` | Log verbosity (debug, info, warn, error) | `info` |
+| `RAILS_MAX_THREADS` | Puma thread count | `5` |
+| `RAILS_MIN_THREADS` | Minimum Puma threads | `RAILS_MAX_THREADS` |
+| `WEB_CONCURRENCY` | Puma worker processes | Auto (CPU cores) |
+| `RAILS_MASTER_KEY` | Master key for credentials | - |
+
+## Web Server Configuration
+
+### Puma Settings
+
+Configuration is in `config/puma.rb`:
+
+```ruby
+# Thread configuration
+max_threads_count = ENV.fetch("RAILS_MAX_THREADS") { 5 }
+min_threads_count = ENV.fetch("RAILS_MIN_THREADS") { max_threads_count }
+threads min_threads_count, max_threads_count
+
+# Worker processes (production only)
+if ENV["RAILS_ENV"] == "production"
+  require "concurrent-ruby"
+  worker_count = Integer(ENV.fetch("WEB_CONCURRENCY") { Concurrent.physical_processor_count })
+  workers worker_count if worker_count > 1
+end
+
+# Port
+port ENV.fetch("PORT") { 3000 }
+
+# Environment
+environment ENV.fetch("RAILS_ENV") { "development" }
+```
+
+### Performance Tuning
+
+<Tabs>
+  <Tab title="Development">
+    ```bash
+    export RAILS_MAX_THREADS=5
+    export WEB_CONCURRENCY=1
+    ```
+    Single worker, 5 threads - fast reload times
+  </Tab>
+  
+  <Tab title="Production (Small)">
+    ```bash
+    export RAILS_MAX_THREADS=5
+    export WEB_CONCURRENCY=2
+    ```
+    2 workers, 5 threads each - good for 2-4 CPU cores
+  </Tab>
+  
+  <Tab title="Production (Large)">
+    ```bash
+    export RAILS_MAX_THREADS=10
+    export WEB_CONCURRENCY=4
+    ```
+    4 workers, 10 threads each - good for 8+ CPU cores
+  </Tab>
+</Tabs>
+
+## Application Configuration
+
+### Rails Configuration Files
+
+Key configuration files in `config/`:
+
+- `config/application.rb` - Application-wide settings
+- `config/environments/development.rb` - Development settings
+- `config/environments/production.rb` - Production settings
+- `config/environments/test.rb` - Test settings
+
+### Production Settings
+
+From `config/environments/production.rb`:
+
+```ruby
+Rails.application.configure do
+  # Code loading
+  config.enable_reloading = false
+  config.eager_load = true
+
+  # Caching
+  config.action_controller.perform_caching = true
+
+  # Assets
+  config.assets.compile = false  # Precompiled in build
+
+  # SSL
+  config.force_ssl = true  # Requires HTTPS
+
+  # Logging
+  config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
+  config.log_tags = [ :request_id ]
+
+  # Active Storage
+  config.active_storage.service = :local
+end
+```
+
+### SSL/HTTPS Configuration
+
+Production enforces SSL by default. For deployment:
+
+<Steps>
+
+<Step title="Option 1: Reverse Proxy (Recommended)">
+
+Use Nginx/Apache for SSL termination:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name lynxnote.example.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+</Step>
+
+<Step title="Option 2: Disable SSL (Development Only)">
+
+```ruby
+# config/environments/production.rb
+config.force_ssl = false  # Not recommended for production
+```
+
+</Step>
+
+</Steps>
+
+## File Upload Configuration
+
+### CarrierWave Settings
+
+Lynx Note uses CarrierWave for handling note image uploads:
+
+```ruby
+# Gemfile dependencies
+gem 'carrierwave', '~> 2.2', '>= 2.2.6'
+gem 'carrierwave-mongoid', '~> 1.4'
+```
+
+### Storage Configuration
+
+<CodeGroup>
+
+```ruby Development
+# Uploads stored in public/uploads
+CarrierWave.configure do |config|
+  config.storage = :file
+  config.root = Rails.root.join('public')
+end
+```
+
+```ruby Production
+# Mount persistent volume for uploads
+# Docker: -v /path/on/host:/rails/public/uploads
+# Kubernetes: PersistentVolumeClaim
+
+CarrierWave.configure do |config|
+  config.storage = :file
+  config.permissions = 0644
+  config.directory_permissions = 0755
+end
+```
+
+</CodeGroup>
+
+## Database Initialization
+
+### First Deployment
+
+<Steps>
+
+<Step title="Install dependencies">
+
+```bash
+bundle install
+```
+
+</Step>
+
+<Step title="Verify MongoDB connection">
+
+```bash
+rails runner "puts Mongoid.default_client.cluster.servers.first.address"
+```
+
+</Step>
+
+<Step title="Prepare database">
+
+```bash
+RAILS_ENV=production rails db:prepare
+```
+
+This creates indexes and initializes collections.
+
+</Step>
+
+<Step title="Create admin user (optional)">
+
+```bash
+RAILS_ENV=production rails console
+> # Create your first admin user in the console
+```
+
+</Step>
+
+</Steps>
+
+## Logging Configuration
+
+### Log Levels
+
+```bash
+# Debug: Verbose, all queries and requests
+export RAILS_LOG_LEVEL=debug
+
+# Info: Normal operations (default)
+export RAILS_LOG_LEVEL=info
+
+# Warn: Only warnings and errors
+export RAILS_LOG_LEVEL=warn
+
+# Error: Only errors
+export RAILS_LOG_LEVEL=error
+```
+
+### Log Output
+
+<Tabs>
+  <Tab title="Development">
+    ```ruby
+    # Logs to log/development.log
+    config.logger = ActiveSupport::Logger.new("log/development.log")
+    ```
+  </Tab>
+  
+  <Tab title="Production">
+    ```ruby
+    # Logs to STDOUT (Docker/container friendly)
+    config.logger = ActiveSupport::Logger.new(STDOUT)
+      .tap  { |logger| logger.formatter = ::Logger::Formatter.new }
+      .then { |logger| ActiveSupport::TaggedLogging.new(logger) }
+    ```
+  </Tab>
+</Tabs>
+
+## Environment Setup Examples
+
+### Development
+
+```bash
+# .env.development
+RAILS_ENV=development
+MONGODB_URI=mongodb://localhost:27017/laboratorio_development
+RAILS_LOG_LEVEL=debug
+PORT=3000
+```
+
+### Production
+
+```bash
+# .env.production
+RAILS_ENV=production
+MONGODB_URI=mongodb://mongo-host:27017/laboratorio_production
+SECRET_KEY_BASE=your_secret_key_here
+RAILS_LOG_LEVEL=info
+RAILS_MAX_THREADS=10
+WEB_CONCURRENCY=4
+PORT=3000
+```
+
+### Docker Environment File
+
+```bash
+# .env (for docker-compose)
+SECRET_KEY_BASE=your_secret_key_here
+RAILS_LOG_LEVEL=info
+RAILS_MAX_THREADS=5
+WEB_CONCURRENCY=2
+MONGODB_URI=mongodb://mongodb:27017/laboratorio_production
+```
+
+## Verification
+
+Verify your configuration:
+
+```bash
+# Check environment
+rails runner "puts Rails.env"
+
+# Check MongoDB connection
+rails runner "puts Mongoid.default_client.database.name"
+
+# Check loaded configuration
+rails runner "puts Rails.application.config.force_ssl"
+
+# Test application
+curl http://localhost:3000
+```
+
+## Troubleshooting
+
+### MongoDB Connection Errors
+
+```bash
+# Test MongoDB connectivity
+mongosh --host localhost --port 27017
+
+# Check mongoid configuration
+rails runner "puts Mongoid::Config.clients[:default]"
+```
+
+### Missing SECRET_KEY_BASE
+
+```bash
+# Generate new secret
+rails secret
+
+# Export immediately
+export SECRET_KEY_BASE=$(rails secret)
+```
+
+### Asset Compilation Issues
+
+```bash
+# Precompile assets manually
+RAILS_ENV=production rails assets:precompile
+
+# With dummy secret (for build environments)
+SECRET_KEY_BASE_DUMMY=1 rails assets:precompile
+```
+
+## Next Steps
+
+- [System Requirements](/deployment/requirements) - Verify prerequisites
+- [Docker Deployment](/deployment/docker) - Container deployment guide

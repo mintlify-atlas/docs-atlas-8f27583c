@@ -1,0 +1,109 @@
+{
+  "projectType": "saas",
+  "projectName": "Lynx Note",
+  "projectDescription": "A collaborative note-taking web application similar to Notion with sharing, collections, and friendship features",
+  "theme": "almond",
+  "primaryColor": "#8B5CF6",
+  "lightColor": "#C4B5FD",
+  "darkColor": "#6D28D9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/notes",
+              "features/collections",
+              "features/sharing",
+              "features/friendships"
+            ]
+          },
+          {
+            "group": "User Guide",
+            "pages": [
+              "guides/user-authentication",
+              "guides/managing-notes",
+              "guides/organizing-collections",
+              "guides/collaborating"
+            ]
+          },
+          {
+            "group": "Administration",
+            "pages": [
+              "admin/overview",
+              "admin/user-management",
+              "admin/content-moderation"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "development/architecture",
+              "development/database-schema",
+              "development/authentication"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "pages": [
+              "api/users",
+              "api/notes",
+              "api/collections",
+              "api/friendships",
+              "api/sharing"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/requirements",
+              "deployment/docker",
+              "deployment/configuration"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "User authentication with admin and user roles",
+    "Note creation with text, lists, and images",
+    "Collection organization for grouping notes",
+    "Friendship system with requests and acceptance",
+    "Sharing notes and collections with friends",
+    "Real-time notifications",
+    "Admin dashboard for complete resource management",
+    "Responsive design for all devices"
+  ],
+  "publicApiSurface": [
+    "User (name, email, password, role)",
+    "Note (title, content, user_id)",
+    "Collection (name, notes, user_id)",
+    "Friendship (user_id, friend_id, status)",
+    "Sharing (owner, shared_with, shareable_type, shareable_id)",
+    "Notification (user_id, message)",
+    "POST /login - Authenticate user",
+    "POST /signup - Register new user",
+    "GET /logout - End user session",
+    "CRUD /notes - Manage notes",
+    "CRUD /collections - Manage collections",
+    "CRUD /friendships - Manage friendships",
+    "POST /sharing_create - Share content",
+    "GET /getNotifications - Retrieve notifications"
+  ]
+}
